@@ -5,10 +5,10 @@ Note that this file is based on the following two references:
 """
 
 import sys
-import base64
 import numpy as np
 import torch
 import zmq
+import simplejpeg
 from PIL import Image
 from scipy.spatial.transform import Rotation
 
@@ -124,12 +124,21 @@ def main():
             # Convert from CHW to HWC
             image_np = (render_res["render"].permute(1, 2, 0) * 255).to(torch.uint8).detach().cpu().numpy()
             
-            response = {
-                'shape': image_np.shape,
-                # TODO: Not sure if image compression would be better
-                'image': base64.b64encode(image_np.tobytes()).decode('utf-8')
-            }
-            receiver.send_json(response)
+            # Ensure array is C contiguous before JPEG encoding
+            image_np = np.ascontiguousarray(image_np)
+            # Compress the image using simplejpeg
+            # Ref: https://github.com/jeffbass/imagezmq/issues/56
+            compressed_image = simplejpeg.encode_jpeg(
+                image_np,
+                quality=90,
+                colorspace='RGB'
+            )
+            # Send metadata first
+            metadata = {'shape': image_np.shape}
+            receiver.send_json(metadata, zmq.SNDMORE)
+            # Then send the compressed image data
+            receiver.send(compressed_image)
+            
         except Exception as e:
             print(f"Error during rendering: {e}")
             # Send error response

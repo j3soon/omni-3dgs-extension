@@ -1,11 +1,11 @@
 import argparse
 import time
-import base64
 
 import cv2
 import numpy as np
 import pygame
 import zmq
+import simplejpeg
 
 
 def parse_args():
@@ -57,16 +57,19 @@ def main(args):
 
         try:
             socket.send_json(pose_data)
-            response = socket.recv_json()
+            # Receive multipart response
+            metadata = socket.recv_json()
+            image_data = socket.recv()
             
-            if 'error' in response:
-                print(f"Error from server: {response['error']}")
+            if 'error' in metadata:
+                print(f"Error from server: {metadata['error']}")
             else:
-                # Convert base64 string back to numpy array
-                shape = response['shape']
-                image_base64 = response['image'] # HWC
-                image_bytes = base64.b64decode(image_base64)
-                image = np.frombuffer(image_bytes, dtype=np.uint8).reshape(shape)
+                # Decode JPEG image using simplejpeg
+                shape = metadata['shape']
+                image = simplejpeg.decode_jpeg(
+                    image_data,
+                    colorspace='RGB'
+                ) # HWC
                 # Resize and process image
                 image = cv2.resize(image, (width, height), interpolation=cv2.INTER_LINEAR).transpose(1, 0, 2)
                 screen_buffer[:] = image

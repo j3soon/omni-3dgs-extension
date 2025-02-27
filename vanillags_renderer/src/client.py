@@ -1,7 +1,7 @@
 import zmq
 import numpy as np
 import matplotlib.pyplot as plt
-import base64
+import simplejpeg
 
 def main():
     # Initialize ZMQ
@@ -19,18 +19,21 @@ def main():
         # Send request
         sender.send_json(test_data)
         
-        # Receive response
-        response = sender.recv_json()
+        # Receive multipart response
+        metadata = sender.recv_json()
+        image_data = sender.recv()
         
-        if 'error' in response:
-            print(f"Error from server: {response['error']}")
+        if 'error' in metadata:
+            print(f"Error from server: {metadata['error']}")
             return
             
-        # Convert base64 string back to bytes, then to numpy array
-        shape = response['shape']
-        image_base64 = response['image'] # HWC
-        image_bytes = base64.b64decode(image_base64)
-        image = np.frombuffer(image_bytes, dtype=np.uint8).reshape(shape)
+        # Decode JPEG image using simplejpeg
+        shape = metadata['shape']
+        image = simplejpeg.decode_jpeg(
+            image_data,
+            colorspace='RGB'
+        ) # HWC
+        
         # Display the image
         plt.figure(figsize=(16, 9))
         plt.imshow(image)

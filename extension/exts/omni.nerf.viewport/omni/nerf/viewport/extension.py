@@ -6,8 +6,8 @@ import omni.ext
 import omni.ui as ui
 import omni.usd
 import zmq
-import base64
 import torch as th
+import simplejpeg
 from omni.kit.viewport.utility import get_active_viewport, get_active_viewport_window
 from omni.ui import scene as sc
 from pxr import Gf, Usd, UsdGeom
@@ -249,16 +249,20 @@ class OmniNerfViewportExtension(omni.ext.IExt):
                             'rotation': list(np.deg2rad(camera_to_object_rot))
                         }
                         self.zmq_socket.send_json(pose_data)
-                        response = self.zmq_socket.recv_json()
                         
-                        if 'error' in response:
-                            print(f"[omni.nerf.viewport] Error from server: {response['error']}")
+                        # Receive metadata and image data separately
+                        metadata = self.zmq_socket.recv_json()
+                        image_data = self.zmq_socket.recv()
+                        
+                        if 'error' in metadata:
+                            print(f"[omni.nerf.viewport] Error from server: {metadata['error']}")
                         else:
-                            # Convert base64 string back to numpy array
-                            shape = response['shape'] # HWC
-                            image_base64 = response['image']
-                            image_bytes = base64.b64decode(image_base64)
-                            image = np.frombuffer(image_bytes, dtype=np.uint8).reshape(shape)
+                            # Decode JPEG image using simplejpeg
+                            shape = metadata['shape']
+                            image = simplejpeg.decode_jpeg(
+                                image_data,
+                                colorspace='RGB'
+                            ) # HWC format
                             
                             # Resize to match viewport dimensions
                             image = cv2.resize(image, (self.rgba_w, self.rgba_h), interpolation=cv2.INTER_LINEAR)
