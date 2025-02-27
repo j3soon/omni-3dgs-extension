@@ -2,6 +2,8 @@
 
 Neural Radiance Field (NeRF) extension for Omniverse.
 
+> For 3D Gaussian Splatting (3DGS) support, please refer to the [Omniverse 3DGS Extension](https://github.com/j3soon/omni-3dgs-extension).
+
 ## Prerequisites
 
 - **Hardware**:
@@ -63,10 +65,9 @@ The following assumes that you are running the commands from the root of the rep
 
 ## Managing Containers
 
-Login to NGC and pull the image `nvcr.io/nvidia/isaac-sim:2023.1.1` by following [this guide](https://docs.omniverse.nvidia.com/isaacsim/latest/installation/install_container.html). Then build the docker images for the extension:
+Build the docker images for the extension:
 
 ```sh
-docker pull nvcr.io/nvidia/isaac-sim:2023.1.1
 docker compose build
 ```
 
@@ -122,6 +123,16 @@ docker exec -it isaac-sim-viewer bash
 /isaac-sim/runapp.sh --ext-folder /src/exts --enable omni.nerf.viewport
 ```
 
+> Alternatively, you can use WebRTC by running:
+> 
+> ```sh
+> # in container
+> /isaac-sim/runheadless.webrtc.sh --ext-folder /src/exts --enable omni.nerf.viewport
+> ```
+> 
+> Wait for the `Isaac Sim Headless WebRTC App is loaded.` message,
+> and then visit <http://127.0.0.1:8211/streaming/webrtc-demo/?server=127.0.0.1> in Google Chrome.
+
 ![](docs/media/isaac-sim-steps.png)
 
 1. Select the folder `/workspace/usd`
@@ -131,8 +142,9 @@ docker exec -it isaac-sim-viewer bash
 
 https://github.com/j3soon/omni-nerf-extension/assets/20457146/5203061a-3b23-4d72-8103-5e3a6e9923a7
 
+https://github.com/user-attachments/assets/a1640eba-2cd0-497e-b47e-529190154677
+
 **Known Issues**:
-- The Omniverse UI seems to block the use of double-clicking when the extension is enabled. I believe this is due to the rendering updates interrupting the determination of the double-click event. This issue can be bypassed by using single left-clicks and right-clicks instead. Alternatively, move the NeRF Viewport to cover the default Viewport (such that the rendering stops).
 - Cannot correctly handling non-uniform scaling of the object mesh yet.
 
 ## Development Notes
