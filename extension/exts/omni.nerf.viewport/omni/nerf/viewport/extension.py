@@ -1,4 +1,3 @@
-import platform
 import threading
 
 import cv2
@@ -27,8 +26,6 @@ class OmniNerfViewportExtension(omni.ext.IExt):
 
     def __init__(self):
         super().__init__()
-        self.is_python_supported: bool = platform.python_version().startswith("3.10")
-        """The Python version must match the backend version for RPyC to work."""
         self.camera_position: Gf.Vec3d = None
         self.camera_rotation: Gf.Vec3d = None
         # Initialize ZMQ context and socket
@@ -66,8 +63,7 @@ class OmniNerfViewportExtension(omni.ext.IExt):
         """RGBA image buffer. The shape is (H, W, 4), following the NumPy convention."""
         self.rgba[:,:,3] = 255
         # Init ZMQ connection
-        if self.is_python_supported:
-            self.init_zmq()
+        self.init_zmq()
         # Build UI
         self.build_ui(ext_id)
         # Start worker thread
@@ -104,9 +100,6 @@ class OmniNerfViewportExtension(omni.ext.IExt):
                 )
                 # TODO: Larger image size?
                 with ui.VStack(height=0):
-                    self.ui_lbl_py = ui.Label("(To Be Updated)")
-                    state = "supported" if platform.python_version().startswith("3.10") else "NOT supported"
-                    self.ui_lbl_py.text = f"Python {platform.python_version()} is {state}"
                     # UI for setting the NeRF mesh
                     # Ref: https://docs.omniverse.nvidia.com/workflows/latest/extensions/scatter_tool.html
                     with ui.HStack():
@@ -209,7 +202,7 @@ class OmniNerfViewportExtension(omni.ext.IExt):
             self.render_event.clear()
             try:
                 # No need to check event type, since there is only one event type: `NEW_FRAME`.
-                if self.is_python_supported and self._mesh_prim_model.as_string != '':
+                if self._mesh_prim_model.as_string != '':
                     viewport_api = get_active_viewport()
                     # We chose to use Viewport instead of Isaac Sim's Camera Sensor to avoid dependency on Isaac Sim.
                     # We want the extension to work with any Omniverse app, not just Isaac Sim.
@@ -290,11 +283,10 @@ class OmniNerfViewportExtension(omni.ext.IExt):
         self.render_event.set()  # Wake up worker thread to check should_stop
         if self.worker_thread is not None:
             self.worker_thread.join(timeout=1.0)
-        if self.is_python_supported:
-            if self.zmq_socket:
-                self.zmq_socket.close()
-            if self.zmq_context:
-                self.zmq_context.term()
+        if self.zmq_socket:
+            self.zmq_socket.close()
+        if self.zmq_context:
+            self.zmq_context.term()
         self.configure_viewport_overlay(False)
 
     def destroy(self):
