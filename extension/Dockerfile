@@ -3,4 +3,4 @@ FROM nvcr.io/nvidia/isaac-sim:4.5.0
 RUN apt-get update \
     && apt-get install -y libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
-RUN /isaac-sim/python.sh -m pip install opencv-python rpyc
+RUN /isaac-sim/python.sh -m pip install opencv-python zmq

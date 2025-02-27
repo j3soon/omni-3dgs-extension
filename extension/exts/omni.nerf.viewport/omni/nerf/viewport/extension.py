@@ -5,7 +5,8 @@ import numpy as np
 import omni.ext
 import omni.ui as ui
 import omni.usd
-import rpyc
+import zmq
+import base64
 from omni.kit.viewport.utility import get_active_viewport
 from pxr import Gf, Usd, UsdGeom
 
@@ -27,6 +28,9 @@ class OmniNerfViewportExtension(omni.ext.IExt):
         """The Python version must match the backend version for RPyC to work."""
         self.camera_position: Gf.Vec3d = None
         self.camera_rotation: Gf.Vec3d = None
+        # Initialize ZMQ context and socket
+        self.zmq_context = None
+        self.zmq_socket = None
 
     # ext_id is current extension id. It can be used with extension manager to query additional information, like where
     # this extension is located on filesystem.
@@ -54,24 +58,17 @@ class OmniNerfViewportExtension(omni.ext.IExt):
         self.rgba = np.ones((self.rgba_h, self.rgba_w, 4), dtype=np.uint8) * 128
         """RGBA image buffer. The shape is (H, W, 4), following the NumPy convention."""
         self.rgba[:,:,3] = 255
-        # Init RPyC connection
+        # Init ZMQ connection
         if self.is_python_supported:
-            self.init_rpyc()
+            self.init_zmq()
         # Build UI
         self.build_ui()
 
-    def init_rpyc(self):
-        # TODO: Make the following configurable
-        host = 'localhost'
-        port = 10001
-        model_config_path = '/workspace/outputs/poster/nerfacto/DATE_TIME/config.yml'
-        model_checkpoint_path = '/workspace/outputs/poster/nerfacto/DATE_TIME/nerfstudio_models/CHECKPOINT_NAME.ckpt'
-        device = 'cuda'
-        self.rpyc_conn = rpyc.classic.connect(host, port)
-        self.rpyc_conn.execute('from nerfstudio_renderer import NerfStudioRenderQueue')
-        self.rpyc_conn.execute('from pathlib import Path')
-        self.rpyc_conn.execute('import torch')
-        self.rpyc_conn.execute(f'rq = NerfStudioRenderQueue(model_config_path=Path("{model_config_path}"), checkpoint_path="{model_checkpoint_path}", device=torch.device("{device}"))')
+    def init_zmq(self):
+        """Initialize ZMQ connection"""
+        self.zmq_context = zmq.Context()
+        self.zmq_socket = self.zmq_context.socket(zmq.REQ)
+        self.zmq_socket.connect("ipc:///tmp/omni-3dgs-extension/vanillags_renderer")
 
     def build_ui(self):
         """Build the UI. Should be called upon startup."""
@@ -204,14 +201,32 @@ class OmniNerfViewportExtension(omni.ext.IExt):
                 self.camera_rotation = camera_to_object_rot
                 print("[omni.nerf.viewport] New camera position:", camera_to_object_pos)
                 print("[omni.nerf.viewport] New camera rotation:", camera_to_object_rot)
-                self.rpyc_conn.execute(f'rq.update_camera({list(camera_to_object_pos)}, {list(np.deg2rad(camera_to_object_rot))})')
-            image = self.rpyc_conn.eval('rq.get_rgb_image()')
-            if image is None:
-                return
-            print("[omni.nerf.viewport] NeRF viewport updated")
-            image = np.array(image) # received with shape (H*, W*, 3)
-            image = cv2.resize(image, (self.rgba_w, self.rgba_h), interpolation=cv2.INTER_LINEAR) # resize to (H, W, 3)
-            self.rgba[:,:,:3] = image * 255
+                
+                # Prepare camera pose data
+                pose_data = {
+                    'position': list(camera_to_object_pos),
+                    'rotation': list(np.deg2rad(camera_to_object_rot))
+                }
+                try:
+                    self.zmq_socket.send_json(pose_data)
+                    response = self.zmq_socket.recv_json()
+                    
+                    if 'error' in response:
+                        print(f"[omni.nerf.viewport] Error from server: {response['error']}")
+                    else:
+                        # Convert base64 string back to numpy array
+                        shape = response['shape'] # HWC
+                        image_base64 = response['image']
+                        image_bytes = base64.b64decode(image_base64)
+                        image = np.frombuffer(image_bytes, dtype=np.uint8).reshape(shape)
+                        
+                        # Resize to match viewport dimensions
+                        image = cv2.resize(image, (self.rgba_w, self.rgba_h), interpolation=cv2.INTER_LINEAR)
+                        self.rgba[:,:,:3] = image
+                        print("[omni.nerf.viewport] NeRF viewport updated")
+                except Exception as e:
+                    print(f"[omni.nerf.viewport] Error during communication: {e}")
+                    return
         else:
             # If python version is not supported, render the dummy image.
             self.rgba[:,:,:3] = (self.rgba[:,:,:3] + np.ones((self.rgba_h, self.rgba_w, 3), dtype=np.uint8)) % 256
@@ -220,7 +235,10 @@ class OmniNerfViewportExtension(omni.ext.IExt):
     def on_shutdown(self):
         print("[omni.nerf.viewport] omni nerf viewport shutdown")
         if self.is_python_supported:
-            self.rpyc_conn.execute('del rq')
+            if self.zmq_socket:
+                self.zmq_socket.close()
+            if self.zmq_context:
+                self.zmq_context.term()
 
     def destroy(self):
         # Ref: https://docs.omniverse.nvidia.com/workflows/latest/extensions/object_info.html#step-3-4-use-usdcontext-to-listen-for-selection-changes
