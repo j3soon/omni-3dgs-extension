@@ -1,25 +1,22 @@
 services:
-  nerfstudio-renderer:
-    image: j3soon/nerfstudio-renderer
+  vanillags-renderer:
+    image: j3soon/vanillags_renderer
     build:
-      context: nerfstudio_renderer
-      args:
-        - CUDA_VERSION=11.8.0
-        - CUDA_ARCHITECTURES=86
-        - OS_VERSION=22.04
-        - SERVER_PORT=10001
-    container_name: nerfstudio-renderer
-    ports:
-      - "10001:10001"
+      context: vanillags_renderer
+    container_name: vanillags-renderer
+    stdin_open: true
+    tty: true
     environment:
       - DISPLAY=$DISPLAY
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
-      - ./nerfstudio_renderer/src:/src:ro
-      - ./pygame_viewer:/pygame_viewer:ro
-      - ./assets:/workspace:ro
-      - cache:/home/user/.cache
-    shm_size: '6gb'
+      - $HOME/.Xauthority:/root/.Xauthority
+      - /tmp/omni-3dgs-extension:/tmp/omni-3dgs-extension # for zmq
+      - ./vanillags_renderer/src:/src:ro
+      - ./assets:/workspace/data:ro
+    devices:
+      - /dev/dri:/dev/dri
+    shm_size: 64g
     deploy:
       resources:
         reservations:
@@ -39,7 +36,18 @@ services:
       - DISPLAY=$DISPLAY
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
+      - $HOME/.Xauthority:/root/.Xauthority
+      - /tmp/omni-3dgs-extension:/tmp/omni-3dgs-extension # for zmq
       - ./pygame_viewer:/src:ro
+    devices:
+      - /dev/dri:/dev/dri
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
   isaac-sim-viewer:
     # Ref: https://github.com/j3soon/isaac-extended?tab=readme-ov-file#docker-container-with-display
     image: j3soon/isaac-sim-viewer
@@ -64,6 +72,8 @@ services:
       - ~/docker/isaac-sim/data:/root/.local/share/ov/data:rw
       - ~/docker/isaac-sim/documents:/root/Documents:rw
       - /tmp/.X11-unix:/tmp/.X11-unix
+      - $HOME/.Xauthority:/root/.Xauthority
+      - /tmp/omni-3dgs-extension:/tmp/omni-3dgs-extension # for zmq
       - ./assets:/workspace
       - ./extension:/src
     deploy:
