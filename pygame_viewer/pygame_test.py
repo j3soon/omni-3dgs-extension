@@ -1,45 +1,26 @@
 import argparse
 import time
+import base64
 
 import cv2
 import numpy as np
 import pygame
-import rpyc
+import zmq
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--host", type=str, default='localhost')
-    parser.add_argument("--port", type=int, default=10001)
-    parser.add_argument("--model_config_path", type=str, required=True)
-    parser.add_argument("--model_checkpoint_path", type=str, required=True)
-    parser.add_argument("--device", type=str, choices=['cpu', 'cuda'], default='cuda')
-    parser.add_argument("--rpyc", type=bool, default=False)
+    parser.add_argument('--socket-url', type=str, 
+                        default="ipc:///tmp/omni-3dgs-extension/vanillags_renderer",
+                        help="ZMQ socket URL to connect to")
     args = parser.parse_args()
     return args
 
 def main(args):
-    if not args.rpyc:
-        # Remote: Make Connection & Import
-        conn = rpyc.classic.connect(args.host, args.port)
-        conn.execute('from nerfstudio_renderer import NerfStudioRenderQueue')
-        conn.execute('from pathlib import Path')
-        conn.execute('import torch')
-        conn.execute('import numpy as np')
-    else:
-        from nerfstudio_renderer import NerfStudioRenderQueue
-        from pathlib import Path
-        import torch
-
-    if not args.rpyc:
-        # Create a Remote NerfStudioRenderQueue
-        conn.execute(f'rq = NerfStudioRenderQueue(model_config_path=Path("{args.model_config_path}"), checkpoint_path="{args.model_checkpoint_path}", device=torch.device("{args.device}"))')
-    else:
-        rq = NerfStudioRenderQueue(
-            model_config_path=Path(args.model_config_path),
-            checkpoint_path=args.model_checkpoint_path,
-            device=torch.device(args.device),
-        )
+    # Initialize ZMQ
+    context = zmq.Context()
+    socket = context.socket(zmq.REQ)
+    socket.connect(args.socket_url)
 
     # Initialize Pygame
     pygame.init()
@@ -58,7 +39,7 @@ def main(args):
     camera_curve_time = 0
     screen_buffer = np.zeros((width, height, 3), dtype=np.uint8)
 
-    # Camera pose for the poster NeRF model
+    # Camera pose for the poster 3DGS model
     camera_position = [0, 0, 0]
     camera_rotation = [0, 0, 0]
 
@@ -68,16 +49,30 @@ def main(args):
             if event.type == pygame.QUIT:
                 running = False
 
-        # Retrieve image
-        if not args.rpyc:
-            image = conn.eval('rq.get_rgb_image()')
-        else:
-            image = rq.get_rgb_image()
-        if image is not None:
-            image = np.array(image) # received with shape (H*, W*, 3)
-            image = cv2.resize(image, (width, height), interpolation=cv2.INTER_LINEAR) # resize to (H, W, 3)
-            image = np.transpose(image, (1, 0, 2))
-            screen_buffer[:] = image * 255
+        # Prepare camera pose data
+        pose_data = {
+            'position': camera_position,
+            'rotation': camera_rotation
+        }
+
+        try:
+            socket.send_json(pose_data)
+            response = socket.recv_json()
+            
+            if 'error' in response:
+                print(f"Error from server: {response['error']}")
+            else:
+                # Convert base64 string back to numpy array
+                shape = response['shape']
+                image_base64 = response['image'] # HWC
+                image_bytes = base64.b64decode(image_base64)
+                image = np.frombuffer(image_bytes, dtype=np.uint8).reshape(shape)
+                # Resize and process image
+                image = cv2.resize(image, (width, height), interpolation=cv2.INTER_LINEAR).transpose(1, 0, 2)
+                screen_buffer[:] = image
+
+        except Exception as e:
+            print(f"Error during communication: {e}")
 
         animation_progress = (np.sin(camera_curve_time) + 1) / 2
 
@@ -107,20 +102,12 @@ def main(args):
         # Move Camera
         camera_position[2] = animation_progress
 
-        # Update Camera
-        if not args.rpyc:
-            conn.execute(f'rq.update_camera({camera_position}, {camera_rotation})')
-        else:
-            rq.update_camera(camera_position, camera_rotation)
-
         if int(time.time()) % 5 == 0:
             camera_curve_time += 1.0 / 30.0
 
-    if not args.rpyc:
-        # Delete remote render queue
-        conn.execute('del rq')
-
-    # Quit Pygame
+    # Cleanup ZMQ
+    socket.close()
+    context.term()
     pygame.quit()
 
 if __name__ == '__main__':

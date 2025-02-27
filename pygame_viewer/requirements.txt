@@ -1,4 +1,4 @@
 pygame
 numpy
 opencv-python
-rpyc
+zmq
