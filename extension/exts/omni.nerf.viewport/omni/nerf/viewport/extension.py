@@ -240,8 +240,6 @@ class OmniNerfViewportExtension(omni.ext.IExt):
                     if camera_to_object_pos != self.camera_position or camera_to_object_rot != self.camera_rotation:
                         self.camera_position = camera_to_object_pos
                         self.camera_rotation = camera_to_object_rot
-                        print("[omni.nerf.viewport] New camera position:", camera_to_object_pos)
-                        print("[omni.nerf.viewport] New camera rotation:", camera_to_object_rot)
                         
                         # Prepare camera pose data
                         pose_data = {
@@ -266,7 +264,6 @@ class OmniNerfViewportExtension(omni.ext.IExt):
                             
                             # Resize to match viewport dimensions
                             image = cv2.resize(image, (self.rgba_w, self.rgba_h), interpolation=cv2.INTER_LINEAR)
-                            print("[omni.nerf.viewport] NeRF viewport updated")
                             self.rgba[:,:,:3] = th.from_numpy(image).to(device="cuda")
                 else:
                     # If python version is not supported, render the dummy image.
