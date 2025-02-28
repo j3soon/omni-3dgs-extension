@@ -1,8 +1,8 @@
-# Omniverse NeRF Extension
+# Omniverse 3D Gaussian Splatting Extension
 
-Neural Radiance Field (NeRF) extension for Omniverse.
+3D Gaussian Splatting (3DGS) extension for Omniverse.
 
-> For 3D Gaussian Splatting (3DGS) support, please refer to the [Omniverse 3DGS Extension](https://github.com/j3soon/omni-3dgs-extension).
+> For Neural Radiance Field (NeRF) support, please refer to the [Omniverse NeRF Extension](https://github.com/j3soon/omni-nerf-extension).
 
 ## Prerequisites
 
@@ -19,49 +19,44 @@ Neural Radiance Field (NeRF) extension for Omniverse.
 
 ## Demo
 
-https://github.com/j3soon/omni-nerf-extension/assets/20457146/4b022624-a172-40b5-a5ad-c0ae678412f8
-
-> At the exterior of the National Tsing Hua University (NTHU) swimming pool. Collected by [@muyishen2040](https://github.com/muyishen2040), which is also used in the [DriveEnv-NeRF project](https://github.com/muyishen2040/DriveEnvNeRF).
-
-https://github.com/j3soon/omni-nerf-extension/assets/20457146/40835ce5-5834-4631-aa17-1b591e402f27
-
-> Exterior of the Delta Building in National Tsing Hua University (NTHU). Collected by [@Howardkhh](https://github.com/Howardkhh).
-
-https://github.com/j3soon/omni-nerf-extension/assets/20457146/049ff215-7a68-477b-9bc3-57b4cb3a889e
-
-> The UR5 Robotic Arm in [ElsaLab](https://github.com/elsa-lab).
-
-https://github.com/j3soon/omni-nerf-extension/assets/20457146/3c9d657c-772d-4a83-9ac0-7af8c301d24f
-
-> The Husky UGV in [ElsaLab](https://github.com/elsa-lab).
+> TODO: Add more demo videos here.
 
 **Note**: The datasets for these demos are not provided in this repository as they are casually collected. The purpose of these demos is to illustrate that this repository can be readily applied to a variety of custom datasets with extremely low effort. The following guide will use the `Poster` dataset for simplicity.
 
 ## Setup
 
 ```sh
-git clone https://github.com/j3soon/omni-nerf-extension
-cd omni-nerf-extension
+git clone https://github.com/j3soon/omni-3dgs-extension
+cd omni-3dgs-extension
 ```
 
 Download assets:
 
 ```sh
-wget https://github.com/j3soon/omni-nerf-extension/releases/download/v0.0.2/assets.zip
+wget https://github.com/j3soon/omni-3dgs-extension/releases/download/v0.0.1/assets.zip
 unzip assets.zip
 ```
 
-Prepare assets for `nerfstudio_renderer`:
+Prepare assets for `vanillags_renderer`:
+
+Rename the timestamp and checkpoint files to the same name as the placeholder for simplicity:
 
 ```sh
 # change the DATE_TIME to the name of the placeholder
-DATE_TIME=2023-12-30_111633
-CHECKPOINT_NAME=step-000029999
-cp -r ./assets/outputs/poster/nerfacto/$DATE_TIME ./assets/outputs/poster/nerfacto/DATE_TIME
-mv ./assets/outputs/poster/nerfacto/DATE_TIME/nerfstudio_models/$CHECKPOINT_NAME.ckpt ./assets/outputs/poster/nerfacto/DATE_TIME/nerfstudio_models/CHECKPOINT_NAME.ckpt
+DATE_TIME=2025-02-19_105311
+cp -r ./assets/exports/poster/splatfacto/$DATE_TIME ./assets/exports/poster/splatfacto/DATE_TIME
+DATE_TIME=2025-02-19_121606
+cp -r ./assets/exports/poster/nerfacto/$DATE_TIME ./assets/exports/poster/nerfacto/DATE_TIME
 ```
 
-The following assumes that you are running the commands from the root of the repository.
+You can check if the renaming succeeded with the following command:
+
+```sh
+ls ./assets/exports/poster/splatfacto/DATE_TIME/splat/splat.ply
+ls ./assets/exports/poster/nerfacto/DATE_TIME/tsdf/mesh.obj
+```
+
+The following also assumes that you are running the commands from the root of the repository.
 
 ## Managing Containers
 
@@ -87,17 +82,15 @@ To remove and stop the containers, run:
 docker compose down
 ```
 
-### Nerfstudio Renderer
+### VanillaGS Renderer
 
-Code: [`nerfstudio_renderer`](./nerfstudio_renderer)
+Code: [`vanillags_renderer`](./vanillags_renderer)
 
-The renderer server would be listening on port `10001` upon successful startup:
+Attach to the container and start the renderer:
 
+```sh
+docker exec -it vanillags-renderer bash -ic "python /src/main.py"
 ```
-INFO SLAVE/10001[MainThread]: server started on [0.0.0.0]:10001
-```
-
-After seeing the above logs, no additional steps are required for the renderer server.
 
 ### PyGame Viewer
 
@@ -109,10 +102,6 @@ Attach to the container and run the testing script:
 docker exec -it pygame-viewer /src/run.sh
 ```
 
-The script may fail at the first run due to the cold start of the renderer server. If it fails, try run the script again.
-
-https://github.com/j3soon/omni-nerf-extension/assets/20457146/c971d623-30d1-4cfc-ba47-666dd99e021d
-
 ### Isaac Sim Viewer
 
 Code: [`extension`](./extension)
@@ -120,14 +109,14 @@ Code: [`extension`](./extension)
 ```sh
 docker exec -it isaac-sim-viewer bash
 # in container
-/isaac-sim/runapp.sh --ext-folder /src/exts --enable omni.nerf.viewport
+/isaac-sim/runapp.sh --ext-folder /src/exts --enable omni.gsplat.viewport
 ```
 
 > Alternatively, you can use WebRTC by running:
 > 
 > ```sh
 > # in container
-> /isaac-sim/runheadless.webrtc.sh --ext-folder /src/exts --enable omni.nerf.viewport
+> /isaac-sim/runheadless.webrtc.sh --ext-folder /src/exts --enable omni.gsplat.viewport
 > ```
 > 
 > Wait for the `Isaac Sim Headless WebRTC App is loaded.` message,
@@ -138,20 +127,16 @@ docker exec -it isaac-sim-viewer bash
 1. Select the folder `/workspace/usd`
 2. Open the file `example_scene.usd`
 3. Click the mesh that you added in Step 2.
-4. Press the button in NeRF Viewport to update the input mesh of NeRF.
-
-https://github.com/j3soon/omni-nerf-extension/assets/20457146/5203061a-3b23-4d72-8103-5e3a6e9923a7
-
-https://github.com/user-attachments/assets/a1640eba-2cd0-497e-b47e-529190154677
+4. Press the button in 3DGS Viewport to update the input mesh of 3DGS.
 
 **Known Issues**:
 - Cannot correctly handling non-uniform scaling of the object mesh yet.
 
 ## Development Notes
 
-### Nerfstudio Renderer
+### VanillaGS Renderer
 
-After modifying code, you need to remove and recreate the container to apply changes. This is because the container will copy and install the code upon startup.
+After modifying code, you need to re-run the main renderer script. The docker container can be re-used since the code is mounted as a volume.
 
 ### PyGame Viewer
 
@@ -171,28 +156,37 @@ After modifying code, you can restart Isaac Sim to apply changes. The docker con
 
 ## Future Directions
 
-- Include 3D Gaussian Splatting (3DGS) backend for real-time rendering, which is supported by a newer version of Nerfstudio, see [Splatfacto](https://docs.nerf.studio/nerfology/methods/splat.html) for more details.
-- Include [SDFStudio Neuralangelo](https://github.com/autonomousvision/sdfstudio?tab=readme-ov-file#updates) for improved mesh extraction. However, I've heard that SDFStudio does not perform as well as the original [Neuralangelo](https://research.nvidia.com/labs/dir/neuralangelo/) implementation.
-- Support multiple Nerf renderings in a single scene potentially through [Compositioning](https://docs.nerf.studio/extensions/blender_addon.html#compositing-nerf-objects-in-nerf-environments) or [Block-NeRF](https://waymo.com/intl/zh-tw/research/block-nerf/).
+- Support multiple 3DGS/USD renderings in a single scene potentially through [Compositioning](https://docs.nerf.studio/extensions/blender_addon.html#compositing-nerf-objects-in-nerf-environments).
+- Communication between the renderer and the viewer is currently done through ZMQ IPC and JEPG compression. However it may be more efficient to use [CUDA IPC](https://github.com/NVIDIA/cuda-samples/tree/master/Samples/0_Introduction/simpleIPC) to bypass copy between GPU memory and CPU memory.
+- Include more 3DGS renderers.
 
 ## Related Works
 
-This project focuses on the simplest integration of a NeRF renderer with Omniverse, which diverges from more advanced usages, such as those proposed in [a talk from GTC Spring 2023](https://www.nvidia.com/en-us/on-demand/session/gtcspring23-s52163/). The formal way to integrate NeRF with Omniverse is to first prototype with [custom](https://learnusd.github.io/chapter4/primspecs_and_attributes.html) [USD attributes](https://docs.omniverse.nvidia.com/dev-guide/latest/programmer_ref/usd/properties/create-attribute.html). The NeRF rendering can then be done by reading the custom USD attributes, using special [MDL](https://developer.nvidia.com/rendering-technologies/mdl-sdk) materials, or other clever techniques. Although this allows more advanced usages, this approach is much more difficult to implement. Moreover, the rasterization techniques used in 3DGS is fundamentally different from the volume-rendering techniques used in NeRF, which may require using two different rendering engines in the same scene.
+This project focuses on the simplest integration of various 3DGS renderers with Omniverse by intentionally decoupling the renderer backend from the Omniverse extension. This design enables easy future integration of advanced 3DGS renderers that use representations incompatible with Vanilla Gaussian Splatting, such as [Compact 3DGS](https://maincold2.github.io/c3dgs/), [Octree-GS](https://city-super.github.io/octree-gs/), and others. This allows for rapid prototyping without the need of standardizing the representation of 3DGS.
+
+It is worth noting that advanced usages, such as those (shadows, reflections, refractions) proposed in [a talk from GTC Spring 2023](https://www.nvidia.com/en-us/on-demand/session/gtcspring23-s52163/), are out of scope of this project. The formal way to integrate 3DGS with Omniverse may need to somehow standardize the representation of 3DGS, and refer to methods such as [3DGUT](https://research.nvidia.com/labs/toronto-ai/3DGUT/) and [3DGRT](https://gaussiantracer.github.io/).
+
+This project originated as a feature branch of the [j3soon/omni-nerf-extension](https://github.com/j3soon/omni-nerf-extension). However, the branch has diverged significantly and we decided to maintain this project separately. Key differences include:
+
+- Switched to ZMQ instead of RPyC for communication between the renderer and viewer, enabling full decoupling of codebases since RPyC requires matching Python versions.
+- Uses Inter-Process Communication (IPC) instead of network communication for faster data transfer between the renderer and viewer.
+- Removed progressive rendering since 3DGS rendering is much faster than NeRF and doesn't require it.
+- Directly invoke the 3DGS renderer instead of using the Nerfstudio pipeline to enable easier integration of different 3DGS renderers, avoiding tight coupling with the Nerfstudio codebase which is difficult to trace and maintain.
+
+There are also other projects that attempt to integrate 3DGS with Omniverse, such as [tangkangqi/omni-gaussian-splatting-extension](https://github.com/tangkangqi/omni-gaussiansplating-extension). However, I haven't tried them yet.
 
 ## Acknowledgement
 
-This project has been made possible through the support of [ElsaLab][elsalab] and [NVIDIA AI Technology Center (NVAITC)][nvaitc].
+This project has been made possible through the support of [CGV Lab][cgvlab], [VMLab](vmlab), and [NVIDIA AI Technology Center (NVAITC)][nvaitc].
 
-Special thanks to [@tigerpaws01](https://github.com/tigerpaws01) for the initial implementation of the NeRF renderer backend and PyGame viewer. This project wouldn't have come to light if it weren't for his early contributions. Fun fact: this project was initiated during one of our dinner conversation.
+Special thanks to [@tigerpaws01](https://github.com/tigerpaws01) for the initial implementation of the PyGame viewer.
 
-I would also like to thank the NeRF Study Group members, [@muyishen2040](https://github.com/muyishen2040), [@AndreaHsu](https://github.com/AndreaHsu), [@Howardkhh](https://github.com/Howardkhh), and [VickyHuang1113](https://github.com/VickyHuang1113). Numerous insights and experiences have been gained through the collaboration on the [DriveEnv-NeRF project](https://github.com/muyishen2040/DriveEnvNeRF), which has significantly accelerated the development process of this project.
+I would also like to thank the large-scale 3DGS Study Group members, [@Sunnyhong0326](https://github.com/Sunnyhong0326) and Ting-Yu Yan for discussions.
 
-For a complete list of contributors to the code of this repository, please visit the [contributor list](https://github.com/j3soon/omni-nerf-extension/graphs/contributors).
+For a complete list of contributors to the code of this repository, please visit the [contributor list](https://github.com/j3soon/omni-3dgs-extension/graphs/contributors).
 
-[![](docs/media/logos/elsalab.png)][elsalab]
-[![](docs/media/logos/nvaitc.png)][nvaitc]
-
-[elsalab]: https://github.com/elsa-lab
+[cgvlab]: https://cgv.cs.nthu.edu.tw
+[vmlab]: https://vmlab-nthu.notion.site/NTHU-VMLab-143b8d611ddc8071ab0ede97aacfc403?pvs=4
 [nvaitc]: https://github.com/NVAITC
 
 Disclaimer: this is not an official NVIDIA product.
