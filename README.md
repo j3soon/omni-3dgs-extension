@@ -21,7 +21,7 @@
 
 > TODO: Add more demo videos here.
 
-**Note**: The datasets for these demos are not provided in this repository as they are casually collected. The purpose of these demos is to illustrate that this repository can be readily applied to a variety of custom datasets with extremely low effort. The following guide will use the `Poster` dataset for simplicity.
+**Note**: The datasets for these demos are not provided in this repository as they are casually collected. The purpose of these demos is to illustrate that this repository can be readily applied to a variety of custom datasets with extremely low effort. The following guide will use the `Poster` dataset for simplicity. To train your own dataset, please refer to [docs/training.md](docs/training.md).
 
 ## Setup
 
@@ -102,6 +102,8 @@ Attach to the container and run the testing script:
 docker exec -it pygame-viewer /src/run.sh
 ```
 
+https://github.com/user-attachments/assets/8beea55b-b6ba-4a91-95c6-6fb8505a27db
+
 ### Isaac Sim Viewer
 
 Code: [`extension`](./extension)
@@ -128,6 +130,8 @@ docker exec -it isaac-sim-viewer bash
 2. Open the file `example_scene.usd`
 3. Click the mesh that you added in Step 2.
 4. Press the button in 3DGS Viewport to update the input mesh of 3DGS.
+
+https://github.com/user-attachments/assets/6da05279-73c5-4cdc-ba9a-33cd9fa28f65
 
 **Known Issues**:
 - Cannot correctly handling non-uniform scaling of the object mesh yet.
