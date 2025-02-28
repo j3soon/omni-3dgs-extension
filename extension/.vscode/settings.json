@@ -6,7 +6,7 @@
 
     // Python modules search paths:
     "python.analysis.extraPaths": [
-        "${workspaceFolder}/exts/omni.nerf.viewport",
+        "${workspaceFolder}/exts/omni.gsplat.viewport",
         "${workspaceFolder}/app/kit/extscore/omni.kit.pip_archive/pip_prebundle",
         "${workspaceFolder}/app/kit/kernel/py",
         "${workspaceFolder}/app/kit/plugins/bindings-python",

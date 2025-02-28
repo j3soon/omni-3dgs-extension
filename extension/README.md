@@ -7,7 +7,7 @@ This project was automatically generated.
 
 Open this folder using Visual Studio Code. It will suggest you to install few extensions that will make python experience better.
 
-Look for "omni.nerf.viewport" extension in extension manager and enable it. Try applying changes to any python files, it will hot-reload and you can observe results immediately.
+Look for "omni.gsplat.viewport" extension in extension manager and enable it. Try applying changes to any python files, it will hot-reload and you can observe results immediately.
 
 Alternatively, you can launch your app from console with this folder added to search path and your extension enabled, e.g.:
 

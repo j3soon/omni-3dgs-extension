@@ -1,4 +1,4 @@
-omni.nerf.viewport
+omni.gsplat.viewport
 #############################
 
 Example of Python only extension
@@ -11,7 +11,7 @@ Example of Python only extension
    CHANGELOG
 
 
-.. automodule::"omni.nerf.viewport"
+.. automodule::"omni.gsplat.viewport"
     :platform: Windows-x86_64, Linux-x86_64
     :members:
     :undoc-members:

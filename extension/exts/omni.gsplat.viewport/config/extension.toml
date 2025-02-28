@@ -6,7 +6,7 @@ version = "0.0.2"
 authors = ["Johnson Sun", "Yan-Bin Diau"]
 
 # The title and description fields are primarily for displaying extension info in UI
-title = "omni nerf viewport"
+title = "omni gsplat viewport"
 description="A simple python extension example to use as a starting point for your extensions."
 
 # Path (relative to the root) or content of readme markdown file for UI.
@@ -36,9 +36,9 @@ icon = "data/icon.png"
 [dependencies]
 "omni.kit.uiapp" = {}
 
-# Main python module this extension provides, it will be publicly available as "import omni.nerf.viewport".
+# Main python module this extension provides, it will be publicly available as "import omni.gsplat.viewport".
 [[python.module]]
-name = "omni.nerf.viewport"
+name = "omni.gsplat.viewport"
 
 [[test]]
 # Extra dependencies only to be used during test run

@@ -15,14 +15,15 @@ from pxr import Gf, Usd, UsdGeom
 
 # Functions and vars are available to other extension as usual in python: `example.python_ext.some_public_function(x)`
 def some_public_function(x: int):
-    print("[omni.nerf.viewport] some_public_function was called with x: ", x)
+    print("[omni.gsplat.viewport] some_public_function was called with x: ", x)
     return x ** x
 
 
 # Any class derived from `omni.ext.IExt` in top level module (defined in `python.modules` of `extension.toml`) will be
 # instantiated when extension gets enabled and `on_startup(ext_id)` will be called. Later when extension gets disabled
 # on_shutdown() is called.
-class OmniNerfViewportExtension(omni.ext.IExt):
+class OmniGSplatViewportExtension(omni.ext.IExt):
+    # Name as omni.gsplat.viewport since omni.3dgs.viewport is not a valid name.
 
     def __init__(self):
         super().__init__()
@@ -41,7 +42,7 @@ class OmniNerfViewportExtension(omni.ext.IExt):
     def on_startup(self, ext_id):
         # To see the Python print output in Omniverse Code, open the `Script Editor`.
         # In Isaac Sim, see the startup console instead.
-        print("[omni.nerf.viewport] omni nerf viewport startup")
+        print("[omni.gsplat.viewport] omni gsplat viewport startup")
         # Ref: https://docs.omniverse.nvidia.com/dev-guide/latest/programmer_ref/usd/stage/get-current-stage.html
         self.usd_context = omni.usd.get_context()
         # Subscribe to event streams
@@ -53,7 +54,7 @@ class OmniNerfViewportExtension(omni.ext.IExt):
         # and searching for `get_rendering_event_stream` under `~/.local/share/ov/pkg/isaac_sim-2023.1.1`.
         self.rendering_event_stream = self.usd_context.get_rendering_event_stream()
         self.rendering_event_delegate = self.rendering_event_stream.create_subscription_to_pop(
-            self._on_rendering_event, name="NeRF Viewport Update"
+            self._on_rendering_event, name="GSplat Viewport Update"
         )
         # TODO: Consider subscribing to update events
         # Ref: https://docs.omniverse.nvidia.com/dev-guide/latest/programmer_ref/events.html#subscribe-to-update-events
@@ -83,27 +84,27 @@ class OmniNerfViewportExtension(omni.ext.IExt):
         # Ref: https://youtu.be/j1Pwi1KRkhk
         # Ref: https://github.com/NVIDIA-Omniverse
         # Ref: https://youtu.be/dNLFpVhBrGs
-        self.ui_window = ui.Window("NeRF Viewport", width=self.rgba_w, height=self.rgba_h)
+        self.ui_window = ui.Window("GSplat Viewport", width=self.rgba_w, height=self.rgba_h)
 
         with self.ui_window.frame:
             with ui.ZStack():
-                # NeRF Viewport
+                # GSplat Viewport
                 # Examples on using ByteImageProvider can be found by installing Isaac Sim
                 # and searching for `set_bytes_data` under `~/.local/share/ov/pkg/isaac_sim-2023.1.1`.
                 # Ref: https://docs.omniverse.nvidia.com/kit/docs/omni.ui/latest/omni.ui/omni.ui.ByteImageProvider.html
                 # Ref: https://docs.omniverse.nvidia.com/kit/docs/omni.ui/latest/omni.ui/omni.ui.ImageWithProvider.html
-                self.ui_nerf_provider = ui.ByteImageProvider()
-                self.ui_nerf_img = ui.ImageWithProvider(
-                    self.ui_nerf_provider,
+                self.ui_3dgs_provider = ui.ByteImageProvider()
+                self.ui_3dgs_img = ui.ImageWithProvider(
+                    self.ui_3dgs_provider,
                     width=ui.Percent(100),
                     height=ui.Percent(100),
                 )
                 # TODO: Larger image size?
                 with ui.VStack(height=0):
-                    # UI for setting the NeRF mesh
+                    # UI for setting the 3DGS mesh
                     # Ref: https://docs.omniverse.nvidia.com/workflows/latest/extensions/scatter_tool.html
                     with ui.HStack():
-                        self.ui_lbl_mesh = ui.Label("NeRF Mesh", width=65)
+                        self.ui_lbl_mesh = ui.Label("3DGS Mesh", width=65)
                         # Ref: https://docs.omniverse.nvidia.com/dev-guide/latest/programmer_ref/ui/widgets/stringfield.html
                         self._mesh_prim_model = ui.SimpleStringModel()
                         ui.StringField(model=self._mesh_prim_model)
@@ -145,12 +146,12 @@ class OmniNerfViewportExtension(omni.ext.IExt):
         self.update_ui()
 
     def update_ui(self):
-        print("[omni.nerf.viewport] Updating UI")
+        print("[omni.gsplat.viewport] Updating UI")
         # Ref: https://forums.developer.nvidia.com/t/refresh-window-ui/221200
         self.ui_window.frame.rebuild()
 
     def configure_viewport_overlay(self, show_overlay: bool):
-        print(f"[omni.nerf.viewport] Configuring viewport overlay: {show_overlay}")
+        print(f"[omni.gsplat.viewport] Configuring viewport overlay: {show_overlay}")
         if not show_overlay:
             if self.scene_view is not None:
                 self.scene_view.scene.clear()
@@ -160,7 +161,7 @@ class OmniNerfViewportExtension(omni.ext.IExt):
             # Screen coordinates are in [-1, 1]
             # Ref: https://docs.omniverse.nvidia.com/workflows/latest/extensions/viewport_reticle.html
             sc.Image(
-                self.ui_nerf_provider,
+                self.ui_3dgs_provider,
                 width=2,
                 height=2,
             )
@@ -178,7 +179,7 @@ class OmniNerfViewportExtension(omni.ext.IExt):
         # prim.GetAttribute("xformOp:rotateXYZ").Set(Gf.Vec3d(0, -152, 0))
         # print("translateOp", prim.GetAttribute("xformOp:translate").Get())
         # print("rotateXYZOp", prim.GetAttribute("xformOp:rotateXYZ").Get())
-        print("[omni.nerf.viewport] (TODO) Reset Camera")
+        print("[omni.gsplat.viewport] (TODO) Reset Camera")
 
     def _on_checkbox_value_changed(self, model):
         value = model.get_value_as_bool()
@@ -194,7 +195,7 @@ class OmniNerfViewportExtension(omni.ext.IExt):
 
     def _render_worker(self):
         """Worker thread that processes render requests when event is set"""
-        print("[omni.nerf.viewport] Render worker started")
+        print("[omni.gsplat.viewport] Render worker started")
         th.set_grad_enabled(False) # disable gradient calculation
         while not self.should_stop:
             # Wait for render event
@@ -234,9 +235,6 @@ class OmniNerfViewportExtension(omni.ext.IExt):
                     # from scipy.spatial.transform import Rotation as R
                     # camera_rotation: Gf.Vec3d = R.from_matrix(camera_mat.ExtractRotationMatrix()).as_euler('xyz', degrees=True) # in degrees
                     # ```
-                    # TODO: Consider object transform (if it is moved or rotated)
-                    # No need to transform from Isaac Sim space to Nerfstudio space, since they are both in the same space.
-                    # Ref: https://github.com/j3soon/coordinate-system-conventions
                     if camera_to_object_pos != self.camera_position or camera_to_object_rot != self.camera_rotation:
                         self.camera_position = camera_to_object_pos
                         self.camera_rotation = camera_to_object_rot
@@ -253,7 +251,7 @@ class OmniNerfViewportExtension(omni.ext.IExt):
                         image_data = self.zmq_socket.recv()
                         
                         if 'error' in metadata:
-                            print(f"[omni.nerf.viewport] Error from server: {metadata['error']}")
+                            print(f"[omni.gsplat.viewport] Error from server: {metadata['error']}")
                         else:
                             # Decode JPEG image using simplejpeg
                             shape = metadata['shape']
@@ -268,17 +266,17 @@ class OmniNerfViewportExtension(omni.ext.IExt):
                 else:
                     # If python version is not supported, render the dummy image.
                     self.rgba[:,:,:3] = ((self.rgba[:,:,:3].int() + 1) % 256).to(th.uint8)
-                self.ui_nerf_provider.set_bytes_data_from_gpu(self.rgba.data_ptr(), (self.rgba_w, self.rgba_h))
+                self.ui_3dgs_provider.set_bytes_data_from_gpu(self.rgba.data_ptr(), (self.rgba_w, self.rgba_h))
             except Exception as e:
-                print(f"[omni.nerf.viewport] Error in render worker: {e}")
-        print("[omni.nerf.viewport] Render worker stopped")
+                print(f"[omni.gsplat.viewport] Error in render worker: {e}")
+        print("[omni.gsplat.viewport] Render worker stopped")
 
     def _on_rendering_event(self, event):
         """Called by rendering_event_stream."""
         self.render_event.set()
 
     def on_shutdown(self):
-        print("[omni.nerf.viewport] omni nerf viewport shutdown")
+        print("[omni.gsplat.viewport] omni gsplat viewport shutdown")
         # Stop worker thread
         self.should_stop = True
         self.render_event.set()  # Wake up worker thread to check should_stop
