@@ -1,6 +1,6 @@
 [package]
 # Semantic Versioning is used: https://semver.org/
-version = "0.0.2"
+version = "0.0.1"
 
 # Lists people or organizations that are considered the "authors" of the package.
 authors = ["Johnson Sun", "Yan-Bin Diau"]
