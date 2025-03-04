@@ -123,21 +123,26 @@ def main():
             render_res = render(camera, gaussians, pipeline, background)
             # Convert from CHW (torch) to HWC (numpy)
             # Need to ensure array is C contiguous before JPEG encoding
-            image_np = (render_res["render"].permute(1, 2, 0) * 255).to(torch.uint8).detach().cpu(memory_format=torch.contiguous_format).numpy()
-            
-            # Compress the image using simplejpeg
+            render_np = (render_res["render"].permute(1, 2, 0) * 255).to(torch.uint8).detach().cpu(memory_format=torch.contiguous_format).numpy()
+            depth_np = (render_res["depth"].permute(1, 2, 0) * 255).to(torch.uint8).detach().cpu(memory_format=torch.contiguous_format).numpy()
+            # Compress the images using simplejpeg
             # Ref: https://github.com/jeffbass/imagezmq/issues/56
-            compressed_image = simplejpeg.encode_jpeg(
-                image_np,
+            compressed_render = simplejpeg.encode_jpeg(
+                render_np,
                 quality=90,
                 colorspace='RGB'
             )
+            compressed_depth = simplejpeg.encode_jpeg(
+                depth_np,
+                quality=90,
+                colorspace='GRAY'
+            )
             # Send metadata first
-            metadata = {'shape': image_np.shape}
+            metadata = {'shape': render_np.shape}
             receiver.send_json(metadata, zmq.SNDMORE)
             # Then send the compressed image data
-            receiver.send(compressed_image)
-            
+            receiver.send(compressed_render, zmq.SNDMORE)
+            receiver.send(compressed_depth)
         except Exception as e:
             print(f"Error during rendering: {e}")
             # Send error response

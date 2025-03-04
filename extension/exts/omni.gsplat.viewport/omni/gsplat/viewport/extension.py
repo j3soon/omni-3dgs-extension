@@ -248,17 +248,25 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
                         
                         # Receive metadata and image data separately
                         metadata = self.zmq_socket.recv_json()
-                        image_data = self.zmq_socket.recv()
+                        render_data = self.zmq_socket.recv()
+                        depth_data = self.zmq_socket.recv()
                         
                         if 'error' in metadata:
                             print(f"[omni.gsplat.viewport] Error from server: {metadata['error']}")
                         else:
-                            # Decode JPEG image using simplejpeg
+                            # Decode JPEG images using simplejpeg
                             shape = metadata['shape']
-                            image = simplejpeg.decode_jpeg(
-                                image_data,
+                            render_np = simplejpeg.decode_jpeg(
+                                render_data,
                                 colorspace='RGB'
                             ) # HWC format
+                            depth_np = simplejpeg.decode_jpeg(
+                                depth_data,
+                                colorspace='GRAY'
+                            ) # HWC format
+                            image = render_np
+                            # Uncomment below to see depth image
+                            # image = depth_np.repeat(3, axis=-1)
                             
                             # Resize to match viewport dimensions
                             image = cv2.resize(image, (self.rgba_w, self.rgba_h), interpolation=cv2.INTER_LINEAR)

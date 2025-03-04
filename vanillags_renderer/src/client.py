@@ -21,7 +21,8 @@ def main():
         
         # Receive multipart response
         metadata = sender.recv_json()
-        image_data = sender.recv()
+        render_data = sender.recv()
+        depth_data = sender.recv()
         
         if 'error' in metadata:
             print(f"Error from server: {metadata['error']}")
@@ -29,14 +30,21 @@ def main():
             
         # Decode JPEG image using simplejpeg
         shape = metadata['shape']
-        image = simplejpeg.decode_jpeg(
-            image_data,
+        render_np = simplejpeg.decode_jpeg(
+            render_data,
             colorspace='RGB'
+        ) # HWC
+        depth_np = simplejpeg.decode_jpeg(
+            depth_data,
+            colorspace='GRAY'
         ) # HWC
         
         # Display the image
         plt.figure(figsize=(16, 9))
-        plt.imshow(image)
+        plt.subplot(1, 2, 1)
+        plt.imshow(render_np)
+        plt.subplot(1, 2, 2)
+        plt.imshow(depth_np)
         plt.show()
         
     except Exception as e:

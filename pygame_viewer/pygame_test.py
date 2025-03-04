@@ -59,17 +59,26 @@ def main(args):
             socket.send_json(pose_data)
             # Receive multipart response
             metadata = socket.recv_json()
-            image_data = socket.recv()
-            
+            compressed_render = socket.recv()
+            compressed_depth = socket.recv()
+
             if 'error' in metadata:
                 print(f"Error from server: {metadata['error']}")
             else:
-                # Decode JPEG image using simplejpeg
+                # Decode JPEG images using simplejpeg
                 shape = metadata['shape']
-                image = simplejpeg.decode_jpeg(
-                    image_data,
+                render_np = simplejpeg.decode_jpeg(
+                    compressed_render,
                     colorspace='RGB'
                 ) # HWC
+                depth_np = simplejpeg.decode_jpeg(
+                    compressed_depth,
+                    colorspace='GRAY'
+                ) # HWC
+                image = render_np
+                # Uncomment below to see depth image
+                # image = depth_np.repeat(3, axis=-1)
+
                 # Resize and process image
                 image = cv2.resize(image, (width, height), interpolation=cv2.INTER_LINEAR).transpose(1, 0, 2)
                 screen_buffer[:] = image
