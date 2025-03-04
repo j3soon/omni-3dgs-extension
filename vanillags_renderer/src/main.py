@@ -121,11 +121,10 @@ def main():
                 np.array(data['rotation'])
             )
             render_res = render(camera, gaussians, pipeline, background)
-            # Convert from CHW to HWC
-            image_np = (render_res["render"].permute(1, 2, 0) * 255).to(torch.uint8).detach().cpu().numpy()
+            # Convert from CHW (torch) to HWC (numpy)
+            # Need to ensure array is C contiguous before JPEG encoding
+            image_np = (render_res["render"].permute(1, 2, 0) * 255).to(torch.uint8).detach().cpu(memory_format=torch.contiguous_format).numpy()
             
-            # Ensure array is C contiguous before JPEG encoding
-            image_np = np.ascontiguousarray(image_np)
             # Compress the image using simplejpeg
             # Ref: https://github.com/jeffbass/imagezmq/issues/56
             compressed_image = simplejpeg.encode_jpeg(
