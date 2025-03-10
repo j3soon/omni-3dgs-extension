@@ -58,13 +58,17 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         # Subscribe to event streams
         # Ref: https://docs.omniverse.nvidia.com/kit/docs/kit-manual/latest/guide/event_streams.html
         # Ref: https://docs.omniverse.nvidia.com/kit/docs/kit-manual/104.0/carb.events/carb.events.IEventStream.html#carb.events.IEventStream.create_subscription_to_pop_by_type
+        self.stage_event_stream = self.usd_context.get_stage_event_stream()
+        self.stage_event_delegate = self.stage_event_stream.create_subscription_to_pop(
+            self._on_stage_event, name="GSplat Viewport Stage Event"
+        )
         # Listen to rendering events. Only triggered when the viewport is rendering is updated.
         # Will not be triggered when no viewport is visible on the screen.
         # Examples on using `get_rendering_event_stream` can be found by installing Isaac Sim
         # and searching for `get_rendering_event_stream` under `~/.local/share/ov/pkg/isaac_sim-2023.1.1`.
         self.rendering_event_stream = self.usd_context.get_rendering_event_stream()
         self.rendering_event_delegate = self.rendering_event_stream.create_subscription_to_pop(
-            self._on_rendering_event, name="GSplat Viewport Update"
+            self._on_rendering_event, name="GSplat Viewport Rendering Event"
         )
         # TODO: Consider subscribing to update events
         # Ref: https://docs.omniverse.nvidia.com/dev-guide/latest/programmer_ref/events.html#subscribe-to-update-events
@@ -332,6 +336,15 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         )
         self.rgba[:,:,:3] = wp.to_torch(data).unsqueeze(2)
 
+    def _on_stage_event(self, event):
+        """Called by stage_event_stream."""
+        if event.type == int(omni.usd.StageEventType.OPENED):
+            print(f"[omni.gsplat.viewport] Stage Opened")
+        elif event.type == int(omni.usd.StageEventType.CLOSING):
+            print(f"[omni.gsplat.viewport] Stage Closing")
+            self._mesh_prim_model.as_string = ''
+            self._cleanup()
+
     def _on_rendering_event(self, event):
         """Called by rendering_event_stream."""
         if self.rep_depth_annotator is None:
@@ -339,6 +352,14 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         if self.render_event.is_set():
             return
         self.render_event.set()
+
+    def _cleanup(self):
+        # Detach Replicator depth annotator
+        self.timeline.stop()
+        if self.rep_depth_annotator is not None:
+            self.rep_depth_annotator.detach([self.render_product_path])
+        self.rep_depth_annotator = None
+        self.configure_viewport_overlay(False)
 
     def on_shutdown(self):
         print("[omni.gsplat.viewport] omni gsplat viewport shutdown")
@@ -351,11 +372,7 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
             self.zmq_socket.close()
         if self.zmq_context:
             self.zmq_context.term()
-        # Detach Replicator depth annotator
-        self.timeline.stop()
-        self.rep_depth_annotator.detach([self.render_product_path])
-        self.configure_viewport_overlay(False)
-
+        self._cleanup()
     def destroy(self):
         # Ref: https://docs.omniverse.nvidia.com/workflows/latest/extensions/object_info.html#step-3-4-use-usdcontext-to-listen-for-selection-changes
         self.rendering_event_stream = None
