@@ -1,7 +1,8 @@
 import zmq
 import numpy as np
 import matplotlib.pyplot as plt
-import simplejpeg
+from PIL import Image
+from io import BytesIO
 
 def main():
     # Initialize ZMQ
@@ -28,16 +29,14 @@ def main():
             print(f"Error from server: {metadata['error']}")
             return
             
-        # Decode JPEG image using simplejpeg
+        # Decode TIFF image using PIL
         shape = metadata['shape']
-        render_np = simplejpeg.decode_jpeg(
-            render_data,
-            colorspace='RGB'
-        ) # HWC
-        depth_np = simplejpeg.decode_jpeg(
-            depth_data,
-            colorspace='GRAY'
-        ) # HWC
+        render_img = Image.open(BytesIO(render_data))
+        depth_img = Image.open(BytesIO(depth_data))
+        
+        # Convert to numpy arrays
+        render_np = np.array(render_img)  # HWC
+        depth_np = np.array(depth_img)  # HW
         
         # Display the image
         plt.figure(figsize=(16, 9))

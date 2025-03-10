@@ -8,9 +8,9 @@ import sys
 import numpy as np
 import torch
 import zmq
-import simplejpeg
 from PIL import Image
 from scipy.spatial.transform import Rotation
+from io import BytesIO
 
 # Assume running in the pre-built gaussian-splatting container
 sys.path.append('/workspace/gaussian-splatting')
@@ -124,24 +124,28 @@ def main():
             # Convert from CHW (torch) to HWC (numpy)
             # Need to ensure array is C contiguous before JPEG encoding
             render_np = (render_res["render"].permute(1, 2, 0) * 255).to(torch.uint8).detach().cpu(memory_format=torch.contiguous_format).numpy()
-            depth_np = (render_res["depth"].permute(1, 2, 0) * 255).to(torch.uint8).detach().cpu(memory_format=torch.contiguous_format).numpy()
-            # Compress the images using simplejpeg
-            # Ref: https://github.com/jeffbass/imagezmq/issues/56
-            compressed_render = simplejpeg.encode_jpeg(
-                render_np,
-                quality=90,
-                colorspace='RGB'
-            )
-            compressed_depth = simplejpeg.encode_jpeg(
-                depth_np,
-                quality=90,
-                colorspace='GRAY'
-            )
+            depth_np = render_res["depth"].permute(1, 2, 0).detach().cpu(memory_format=torch.contiguous_format).numpy()
+            
+            # Convert numpy arrays to PIL Images and compress as TIFF
+            render_img = Image.fromarray(render_np)
+            depth_img = Image.fromarray(depth_np.squeeze(), mode='F')  # 'F' mode for float32
+            
+            # Save to bytes buffer
+            render_buffer = BytesIO()
+            depth_buffer = BytesIO()
+            
+            render_img.save(render_buffer, format='TIFF')
+            depth_img.save(depth_buffer, format='TIFF')
+            
+            compressed_render = render_buffer.getvalue()
+            compressed_depth = depth_buffer.getvalue()
+            
             # Send metadata first
             metadata = {'shape': render_np.shape}
             receiver.send_json(metadata, zmq.SNDMORE)
-            # Then send the compressed image data
+            # Send compressed render image
             receiver.send(compressed_render, zmq.SNDMORE)
+            # Send compressed depth image
             receiver.send(compressed_depth)
         except Exception as e:
             print(f"Error during rendering: {e}")

@@ -8,12 +8,13 @@ import omni.usd
 import zmq
 import torch as th
 import warp as wp
-import simplejpeg
 import omni.replicator.core as rep
 from omni.syntheticdata import SyntheticData
 from omni.kit.viewport.utility import get_active_viewport, get_active_viewport_window
 from omni.ui import scene as sc
 from pxr import Gf, Usd, UsdGeom
+from PIL import Image
+from io import BytesIO
 
 
 @wp.kernel
@@ -271,25 +272,27 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
             
             # Receive metadata and image data separately
             metadata = self.zmq_socket.recv_json()
-            render_data = self.zmq_socket.recv()
-            depth_data = self.zmq_socket.recv()
+            render_bytes = self.zmq_socket.recv()
+            depth_bytes = self.zmq_socket.recv()
             
             if 'error' in metadata:
                 print(f"[omni.gsplat.viewport] Error from server: {metadata['error']}")
             else:
-                # Decode JPEG images using simplejpeg
-                shape = metadata['shape']
-                render_np = simplejpeg.decode_jpeg(
-                    render_data,
-                    colorspace='RGB'
-                ) # HWC format
-                depth_np = simplejpeg.decode_jpeg(
-                    depth_data,
-                    colorspace='GRAY'
-                ) # HWC format
+                # Decompress render image
+                render_buffer = BytesIO(render_bytes)
+                render_img = Image.open(render_buffer)
+                render_np = np.array(render_img) # HWC
+                
+                # Decompress depth image
+                depth_buffer = BytesIO(depth_bytes)
+                depth_img = Image.open(depth_buffer)
+                depth_np = np.array(depth_img) # HW
+                
                 image = render_np
                 # Uncomment below to see depth image
-                # image = depth_np.repeat(3, axis=-1)
+                # z_far = 5
+                # normalized_depth = 1 - np.minimum(depth_np, z_far) / z_far
+                # image = (normalized_depth * 255)[..., np.newaxis].repeat(3, axis=-1)
                 
                 # Resize to match viewport dimensions
                 image = cv2.resize(image, (self.rgba_w, self.rgba_h), interpolation=cv2.INTER_LINEAR)
@@ -324,7 +327,7 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         wp.launch(
             normalize_depth,
             dim=(self.rgba_h, self.rgba_w),
-            inputs=[data, 10],
+            inputs=[data, 5],
             device="cuda",
         )
         self.rgba[:,:,:3] = wp.to_torch(data).unsqueeze(2)

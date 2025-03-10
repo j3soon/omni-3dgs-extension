@@ -2,4 +2,4 @@ pygame
 numpy
 opencv-python
 zmq
-simplejpeg
+pillow

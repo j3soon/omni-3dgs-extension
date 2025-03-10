@@ -5,7 +5,8 @@ import cv2
 import numpy as np
 import pygame
 import zmq
-import simplejpeg
+from PIL import Image
+import io
 
 
 def parse_args():
@@ -65,19 +66,18 @@ def main(args):
             if 'error' in metadata:
                 print(f"Error from server: {metadata['error']}")
             else:
-                # Decode JPEG images using simplejpeg
-                shape = metadata['shape']
-                render_np = simplejpeg.decode_jpeg(
-                    compressed_render,
-                    colorspace='RGB'
-                ) # HWC
-                depth_np = simplejpeg.decode_jpeg(
-                    compressed_depth,
-                    colorspace='GRAY'
-                ) # HWC
+                # Decode TIFF images using PIL
+                render_img = Image.open(io.BytesIO(compressed_render))
+                depth_img = Image.open(io.BytesIO(compressed_depth))
+                
+                # Convert to numpy arrays
+                render_np = np.array(render_img) # HWC
+                depth_np = np.array(depth_img) # HW
                 image = render_np
                 # Uncomment below to see depth image
-                # image = depth_np.repeat(3, axis=-1)
+                # z_far = 5
+                # normalized_depth = 1 - np.minimum(depth_np, z_far) / z_far
+                # image = (normalized_depth * 255)[..., np.newaxis].repeat(3, axis=-1)
 
                 # Resize and process image
                 image = cv2.resize(image, (width, height), interpolation=cv2.INTER_LINEAR).transpose(1, 0, 2)
