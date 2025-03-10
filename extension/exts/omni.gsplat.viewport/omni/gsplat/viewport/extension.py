@@ -43,6 +43,7 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         self.camera_rotation: Gf.Vec3d = None
         # Replicator annotators
         self.rep_depth_annotator = None
+        self.rep_rgba_annotator = None
         # Initialize ZMQ context and socket
         self.zmq_context = None
         self.zmq_socket = None
@@ -112,6 +113,8 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         print(f"[omni.gsplat.viewport] Replicator render product path: {self.render_product_path}")
         self.rep_depth_annotator = rep.AnnotatorRegistry.get_annotator("distance_to_camera", device="cuda")
         self.rep_depth_annotator.attach(self.render_product_path)
+        self.rep_rgba_annotator = rep.AnnotatorRegistry.get_annotator("LdrColor", device="cuda")
+        self.rep_rgba_annotator.attach(self.render_product_path)
 
     def build_ui(self, ext_id):
         """Build the UI. Should be called upon startup."""
@@ -301,8 +304,8 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
                 
                 image = render_np
                 # Uncomment below to see depth image
-                normalized_depth = np.minimum(1 / inv_depth_np, self.z_far) / self.z_far
-                image = (normalized_depth * 255)[..., np.newaxis].repeat(3, axis=-1)
+                # normalized_depth = np.minimum(1 / inv_depth_np, self.z_far) / self.z_far
+                # image = (normalized_depth * 255)[..., np.newaxis].repeat(3, axis=-1)
                 
                 # Resize to match viewport dimensions
                 image = cv2.resize(image, (self.rgba_w, self.rgba_h), interpolation=cv2.INTER_LINEAR)
@@ -327,18 +330,21 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         print("[omni.gsplat.viewport] Render worker stopped")
 
     def _update_replicator(self):
-        if not self.timeline.is_playing() or self.rep_depth_annotator is None:
+        if not self.timeline.is_playing() or self.rep_depth_annotator is None or self.rep_rgba_annotator is None:
             return
         depth = self.rep_depth_annotator.get_data() # is warp array with shape (H, W)
+        rgba = self.rep_rgba_annotator.get_data() # is warp array with shape (H, W, 4)
         # Check data shape since it may be (0,) during initialization
-        if depth.shape != (self.rgba_h, self.rgba_w):
+        if depth.shape != (self.rgba_h, self.rgba_w) or rgba.shape != (self.rgba_h, self.rgba_w, 4):
             return
-        wp.launch(
-            normalize_depth,
-            dim=(self.rgba_h, self.rgba_w),
-            inputs=[wp.from_torch(self.rgba), depth, self.z_far],
-            device="cuda",
-        )
+        self.rgba[:,:,:4] = wp.to_torch(rgba)[:,:,:4]
+        # Uncomment below to normalize depth
+        # wp.launch(
+        #     normalize_depth,
+        #     dim=(self.rgba_h, self.rgba_w),
+        #     inputs=[wp.from_torch(self.rgba), depth, self.z_far],
+        #     device="cuda",
+        # )
 
     def _on_stage_event(self, event):
         """Called by stage_event_stream."""
@@ -362,7 +368,10 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         self.timeline.stop()
         if self.rep_depth_annotator is not None:
             self.rep_depth_annotator.detach([self.render_product_path])
+        if self.rep_rgba_annotator is not None:
+            self.rep_rgba_annotator.detach([self.render_product_path])
         self.rep_depth_annotator = None
+        self.rep_rgba_annotator = None
         self.configure_viewport_overlay(False)
 
     def on_shutdown(self):
