@@ -7,7 +7,10 @@ import omni.ui as ui
 import omni.usd
 import zmq
 import torch as th
+import warp as wp
 import simplejpeg
+import omni.replicator.core as rep
+from omni.syntheticdata import SyntheticData
 from omni.kit.viewport.utility import get_active_viewport, get_active_viewport_window
 from omni.ui import scene as sc
 from pxr import Gf, Usd, UsdGeom
@@ -29,6 +32,8 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         super().__init__()
         self.camera_position: Gf.Vec3d = None
         self.camera_rotation: Gf.Vec3d = None
+        # Replicator annotators
+        self.rep_depth_annotator = None
         # Initialize ZMQ context and socket
         self.zmq_context = None
         self.zmq_socket = None
@@ -67,6 +72,7 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         self.init_zmq()
         # Build UI
         self.build_ui(ext_id)
+        self.timeline = omni.timeline.get_timeline_interface()
         # Start worker thread
         self.should_stop = False
         self.worker_thread = threading.Thread(target=self._render_worker, daemon=True)
@@ -77,6 +83,18 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         self.zmq_context = zmq.Context()
         self.zmq_socket = self.zmq_context.socket(zmq.REQ)
         self.zmq_socket.connect("ipc:///tmp/omni-3dgs-extension/vanillags_renderer")
+
+    def init_replicator(self):
+        """Initialize Replicator connection"""
+        viewport_api = get_active_viewport()
+        cam_prim_path = viewport_api.camera_path.pathString
+        self.render_product_path = rep.create.render_product(
+            cam_prim_path,
+            resolution=(self.rgba_w, self.rgba_h),
+        ).path
+        print(f"[omni.gsplat.viewport] Replicator render product path: {self.render_product_path}")
+        self.rep_depth_annotator = rep.AnnotatorRegistry.get_annotator("distance_to_camera", device="cuda")
+        self.rep_depth_annotator.attach(self.render_product_path)
 
     def build_ui(self, ext_id):
         """Build the UI. Should be called upon startup."""
@@ -274,13 +292,24 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
                 else:
                     # If python version is not supported, render the dummy image.
                     self.rgba[:,:,:3] = ((self.rgba[:,:,:3].int() + 1) % 256).to(th.uint8)
-                self.ui_3dgs_provider.set_bytes_data_from_gpu(self.rgba.data_ptr(), (self.rgba_w, self.rgba_h))
             except Exception as e:
                 print(f"[omni.gsplat.viewport] Error in render worker: {e}")
+            if self.timeline.is_playing() and self.rep_depth_annotator is not None:
+                data = self.rep_depth_annotator.get_data() # is warp array with shape (H, W)
+                # Check data shape since it may be (0,) during initialization
+                if data.shape == (self.rgba_h, self.rgba_w):
+                    self.rgba[:,:,:3] = wp.to_torch(data).unsqueeze(2)
+                    self.ui_3dgs_provider.set_bytes_data_from_gpu(data.ptr, (self.rgba_w, self.rgba_h))
+            # Update UI
+            self.ui_3dgs_provider.set_bytes_data_from_gpu(self.rgba.data_ptr(), (self.rgba_w, self.rgba_h))
         print("[omni.gsplat.viewport] Render worker stopped")
 
     def _on_rendering_event(self, event):
         """Called by rendering_event_stream."""
+        if self.rep_depth_annotator is None:
+            self.init_replicator()
+        if self.render_event.is_set():
+            return
         self.render_event.set()
 
     def on_shutdown(self):
@@ -294,9 +323,12 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
             self.zmq_socket.close()
         if self.zmq_context:
             self.zmq_context.term()
+        # Detach Replicator depth annotator
+        self.timeline.stop()
+        self.rep_depth_annotator.detach([self.render_product_path])
         self.configure_viewport_overlay(False)
 
     def destroy(self):
         # Ref: https://docs.omniverse.nvidia.com/workflows/latest/extensions/object_info.html#step-3-4-use-usdcontext-to-listen-for-selection-changes
-        self.stage_event_stream = None
-        self.stage_event_delegate.unsubscribe()
+        self.rendering_event_stream = None
+        self.rendering_event_delegate.unsubscribe()
