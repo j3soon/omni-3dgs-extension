@@ -1,6 +1,5 @@
 import threading
 
-import cv2
 import numpy as np
 import omni.ext
 import omni.ui as ui
@@ -9,13 +8,34 @@ import zmq
 import torch as th
 import warp as wp
 import omni.replicator.core as rep
-from omni.syntheticdata import SyntheticData
 from omni.kit.viewport.utility import get_active_viewport, get_active_viewport_window
 from omni.ui import scene as sc
 from pxr import Gf, Usd, UsdGeom
 from PIL import Image
 from io import BytesIO
 
+
+@wp.kernel
+def fragment_shader(
+    rgba: wp.array3d(dtype=wp.uint8),
+    rgba_rep: wp.array3d(dtype=wp.uint8),
+    depth_rep: wp.array2d(dtype=wp.float32),
+    rgb_3dgs: wp.array3d(dtype=wp.uint8),
+    depth_3dgs: wp.array2d(dtype=wp.float32),
+):
+    i, j = wp.tid()
+    # Full alpha
+    rgba[i, j, 3] = wp.uint8(255)
+    # Depth Test and Alpha Blending
+    if depth_rep[i, j] > depth_3dgs[i, j]:
+        for c in range(3):
+            # Rep over 3DGS
+            alpha = wp.float32(rgba_rep[i, j, 3]) / 255.0
+            rgba[i, j, c] = wp.uint8(alpha * wp.float32(rgba_rep[i, j, c]) + (1.0 - alpha) * wp.float32(rgb_3dgs[i, j, c]))
+    else:
+        for c in range(3):
+            # 3DGS over Rep
+            rgba[i, j, c] = rgb_3dgs[i, j, c]
 
 @wp.kernel
 def normalize_depth(
@@ -84,6 +104,8 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         self.rgba = th.ones((self.rgba_h, self.rgba_w, 4), dtype=th.uint8, device="cuda") * 128
         """RGBA image buffer. The shape is (H, W, 4), following the NumPy convention."""
         self.rgba[:,:,3] = 255
+        self.rgb_3dgs = th.zeros((self.rgba_h, self.rgba_w, 3), dtype=th.uint8, device="cuda")
+        self.depth_3dgs = th.full((self.rgba_h, self.rgba_w), float('inf'), dtype=th.float32, device="cuda")
         # Init warp and disable verbose output
         wp.init()
         # Init ZMQ connection
@@ -266,50 +288,50 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         # ```
         return camera_to_object_pos, camera_to_object_rot
 
-    def _update_rgba(self):
+    def _fill_3dgs_buffers(self):
         if self._mesh_prim_model.as_string == '':
-            # If no mesh is selected, render the dummy image.
-            self.rgba[:,:,:3] = ((self.rgba[:,:,:3].int() + 1) % 256).to(th.uint8)
             return
-
         camera_to_object_pos, camera_to_object_rot = self._get_camera_pose()
-        if camera_to_object_pos != self.camera_position or camera_to_object_rot != self.camera_rotation:
-            self.camera_position = camera_to_object_pos
-            self.camera_rotation = camera_to_object_rot
+        if camera_to_object_pos == self.camera_position and camera_to_object_rot == self.camera_rotation:
+            return
+        self.camera_position = camera_to_object_pos
+        self.camera_rotation = camera_to_object_rot
+        
+        # Prepare camera pose data
+        pose_data = {
+            'position': list(camera_to_object_pos),
+            'rotation': list(np.deg2rad(camera_to_object_rot))
+        }
+        self.zmq_socket.send_json(pose_data)
+        
+        # Receive metadata and image data separately
+        metadata = self.zmq_socket.recv_json()
+        render_bytes = self.zmq_socket.recv()
+        inv_depth_bytes = self.zmq_socket.recv()
+        
+        if 'error' in metadata:
+            print(f"[omni.gsplat.viewport] Error from server: {metadata['error']}")
+        else:
+            # Decompress render image
+            render_buffer = BytesIO(render_bytes)
+            render_img = Image.open(render_buffer)
+            render_np = np.array(render_img) # HWC
+            self.rgb_3dgs[:] = th.from_numpy(render_np).to("cuda") # HWC
+
+            # Decompress inverse depth image
+            inv_depth_buffer = BytesIO(inv_depth_bytes)
+            inv_depth_img = Image.open(inv_depth_buffer)
+            inv_depth_np = np.array(inv_depth_img) # HW
+            self.depth_3dgs[:] = 1 / th.from_numpy(inv_depth_np).to("cuda") # HW
+
+            image = render_np
+            # Uncomment below to see depth image
+            # normalized_depth = np.minimum(1 / inv_depth_np, self.z_far) / self.z_far
+            # image = (normalized_depth * 255)[..., np.newaxis].repeat(3, axis=-1)
             
-            # Prepare camera pose data
-            pose_data = {
-                'position': list(camera_to_object_pos),
-                'rotation': list(np.deg2rad(camera_to_object_rot))
-            }
-            self.zmq_socket.send_json(pose_data)
-            
-            # Receive metadata and image data separately
-            metadata = self.zmq_socket.recv_json()
-            render_bytes = self.zmq_socket.recv()
-            inv_depth_bytes = self.zmq_socket.recv()
-            
-            if 'error' in metadata:
-                print(f"[omni.gsplat.viewport] Error from server: {metadata['error']}")
-            else:
-                # Decompress render image
-                render_buffer = BytesIO(render_bytes)
-                render_img = Image.open(render_buffer)
-                render_np = np.array(render_img) # HWC
-                
-                # Decompress inverse depth image
-                inv_depth_buffer = BytesIO(inv_depth_bytes)
-                inv_depth_img = Image.open(inv_depth_buffer)
-                inv_depth_np = np.array(inv_depth_img) # HW
-                
-                image = render_np
-                # Uncomment below to see depth image
-                # normalized_depth = np.minimum(1 / inv_depth_np, self.z_far) / self.z_far
-                # image = (normalized_depth * 255)[..., np.newaxis].repeat(3, axis=-1)
-                
-                # Resize to match viewport dimensions
-                image = cv2.resize(image, (self.rgba_w, self.rgba_h), interpolation=cv2.INTER_LINEAR)
-                self.rgba[:,:,:3] = th.from_numpy(image).to(device="cuda")
+            # Resize to match viewport dimensions
+            # image = cv2.resize(image, (self.rgba_w, self.rgba_h), interpolation=cv2.INTER_LINEAR)
+            # self.rgba[:,:,:3] = th.from_numpy(image).to(device="cuda")
 
     def _render_worker(self):
         """Worker thread that processes render requests when event is set"""
@@ -321,30 +343,54 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
             self.render_event.clear()
             try:
                 # No need to check event type, since there is only one event type: `NEW_FRAME`.
-                self._update_rgba()
+                self._fill_3dgs_buffers()
             except Exception as e:
                 print(f"[omni.gsplat.viewport] Error in render worker: {e}")
-            self._update_replicator()
+            self._update_and_frame_buffer()
             # Update UI
             self.ui_3dgs_provider.set_bytes_data_from_gpu(self.rgba.data_ptr(), (self.rgba_w, self.rgba_h))
         print("[omni.gsplat.viewport] Render worker stopped")
 
-    def _update_replicator(self):
-        if not self.timeline.is_playing() or self.rep_depth_annotator is None or self.rep_rgba_annotator is None:
+    def _update_and_frame_buffer(self):
+        if self._mesh_prim_model.as_string == '' and not self.timeline.is_playing():
+            # If no mesh is selected, render the dummy image.
+            self.rgba[:,:,:3] = ((self.rgba[:,:,:3].int() + 1) % 256).to(th.uint8)
             return
-        depth = self.rep_depth_annotator.get_data() # is warp array with shape (H, W)
-        rgba = self.rep_rgba_annotator.get_data() # is warp array with shape (H, W, 4)
+        if not self.timeline.is_playing() or \
+            self.rep_depth_annotator is None or \
+            self.rep_rgba_annotator is None:
+            self.rgba[:,:,3] = 255
+            self.rgba[:,:,:3] = self.rgb_3dgs
+            return
+        # Replicator data
+        depth_rep = self.rep_depth_annotator.get_data() # is warp array with shape (H, W)
+        rgba_rep = self.rep_rgba_annotator.get_data() # is warp array with shape (H, W, 4)
         # Check data shape since it may be (0,) during initialization
-        if depth.shape != (self.rgba_h, self.rgba_w) or rgba.shape != (self.rgba_h, self.rgba_w, 4):
+        if depth_rep.shape != (self.rgba_h, self.rgba_w) or \
+            rgba_rep.shape != (self.rgba_h, self.rgba_w, 4):
+            self.rgba[:,:,3] = 255
+            self.rgba[:,:,:3] = self.rgb_3dgs
             return
-        self.rgba[:,:,:4] = wp.to_torch(rgba)[:,:,:4]
+        self.rgba[:,:,:4] = wp.to_torch(rgba_rep)[:,:,:4]
+        wp.launch(
+            fragment_shader,
+            dim=(self.rgba_h, self.rgba_w),
+            inputs=[
+                wp.from_torch(self.rgba),
+                rgba_rep, depth_rep,
+                wp.from_torch(self.rgb_3dgs),
+                wp.from_torch(self.depth_3dgs),
+            ],
+            device="cuda",
+        )
         # Uncomment below to normalize depth
         # wp.launch(
         #     normalize_depth,
         #     dim=(self.rgba_h, self.rgba_w),
-        #     inputs=[wp.from_torch(self.rgba), depth, self.z_far],
+        #     inputs=[wp.from_torch(self.rgba), depth_rep, self.z_far],
         #     device="cuda",
         # )
+        wp.synchronize()
 
     def _on_stage_event(self, event):
         """Called by stage_event_stream."""
