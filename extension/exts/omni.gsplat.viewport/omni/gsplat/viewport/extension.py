@@ -16,10 +16,14 @@ from omni.ui import scene as sc
 from pxr import Gf, Usd, UsdGeom
 
 
-# Functions and vars are available to other extension as usual in python: `example.python_ext.some_public_function(x)`
-def some_public_function(x: int):
-    print("[omni.gsplat.viewport] some_public_function was called with x: ", x)
-    return x ** x
+@wp.kernel
+def normalize_depth(
+    data: wp.array2d(dtype=wp.float32),
+    z_far: float,
+):
+    i, j = wp.tid()
+    data[i, j] = min(z_far, data[i, j]) / z_far
+    data[i, j] = data[i, j] * 255.0
 
 
 # Any class derived from `omni.ext.IExt` in top level module (defined in `python.modules` of `extension.toml`) will be
@@ -68,6 +72,8 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         self.rgba = th.ones((self.rgba_h, self.rgba_w, 4), dtype=th.uint8, device="cuda") * 128
         """RGBA image buffer. The shape is (H, W, 4), following the NumPy convention."""
         self.rgba[:,:,3] = 255
+        # Init warp and disable verbose output
+        wp.init()
         # Init ZMQ connection
         self.init_zmq()
         # Build UI
@@ -314,6 +320,13 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         # Check data shape since it may be (0,) during initialization
         if data.shape != (self.rgba_h, self.rgba_w):
             return
+
+        wp.launch(
+            normalize_depth,
+            dim=(self.rgba_h, self.rgba_w),
+            inputs=[data, 10],
+            device="cuda",
+        )
         self.rgba[:,:,:3] = wp.to_torch(data).unsqueeze(2)
 
     def _on_rendering_event(self, event):
