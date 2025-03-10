@@ -124,29 +124,31 @@ def main():
             # Convert from CHW (torch) to HWC (numpy)
             # Need to ensure array is C contiguous before JPEG encoding
             render_np = (render_res["render"].permute(1, 2, 0) * 255).to(torch.uint8).detach().cpu(memory_format=torch.contiguous_format).numpy()
-            depth_np = render_res["depth"].permute(1, 2, 0).detach().cpu(memory_format=torch.contiguous_format).numpy()
+            # The "depth" here actually contains the inverse depth
+            # Ref: https://github.com/graphdeco-inria/diff-gaussian-rasterization/blob/9c5c2028f6fbee2be239bc4c9421ff894fe4fbe0/rasterize_points.cu#L123
+            inv_depth_np = render_res["depth"].permute(1, 2, 0).detach().cpu(memory_format=torch.contiguous_format).numpy()
             
             # Convert numpy arrays to PIL Images and compress as TIFF
             render_img = Image.fromarray(render_np)
-            depth_img = Image.fromarray(depth_np.squeeze(), mode='F')  # 'F' mode for float32
+            inv_depth_img = Image.fromarray(inv_depth_np.squeeze(), mode='F')  # 'F' mode for float32
             
             # Save to bytes buffer
             render_buffer = BytesIO()
-            depth_buffer = BytesIO()
+            inv_depth_buffer = BytesIO()
             
             render_img.save(render_buffer, format='TIFF')
-            depth_img.save(depth_buffer, format='TIFF')
+            inv_depth_img.save(inv_depth_buffer, format='TIFF')
             
             compressed_render = render_buffer.getvalue()
-            compressed_depth = depth_buffer.getvalue()
+            compressed_inv_depth = inv_depth_buffer.getvalue()
             
             # Send metadata first
             metadata = {'shape': render_np.shape}
             receiver.send_json(metadata, zmq.SNDMORE)
             # Send compressed render image
             receiver.send(compressed_render, zmq.SNDMORE)
-            # Send compressed depth image
-            receiver.send(compressed_depth)
+            # Send compressed inverse depth image
+            receiver.send(compressed_inv_depth)
         except Exception as e:
             print(f"Error during rendering: {e}")
             # Send error response

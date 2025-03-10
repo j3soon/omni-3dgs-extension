@@ -61,22 +61,22 @@ def main(args):
             # Receive multipart response
             metadata = socket.recv_json()
             compressed_render = socket.recv()
-            compressed_depth = socket.recv()
+            compressed_inv_depth = socket.recv()
 
             if 'error' in metadata:
                 print(f"Error from server: {metadata['error']}")
             else:
                 # Decode TIFF images using PIL
                 render_img = Image.open(io.BytesIO(compressed_render))
-                depth_img = Image.open(io.BytesIO(compressed_depth))
+                inv_depth_img = Image.open(io.BytesIO(compressed_inv_depth))
                 
                 # Convert to numpy arrays
                 render_np = np.array(render_img) # HWC
-                depth_np = np.array(depth_img) # HW
+                inv_depth_np = np.array(inv_depth_img) # HW
                 image = render_np
                 # Uncomment below to see depth image
                 # z_far = 5
-                # normalized_depth = 1 - np.minimum(depth_np, z_far) / z_far
+                # normalized_depth = np.minimum(1 / inv_depth_np, z_far) / z_far
                 # image = (normalized_depth * 255)[..., np.newaxis].repeat(3, axis=-1)
 
                 # Resize and process image

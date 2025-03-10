@@ -23,8 +23,8 @@ def normalize_depth(
     z_far: float,
 ):
     i, j = wp.tid()
-    data[i, j] = min(z_far, data[i, j]) / z_far
-    data[i, j] = data[i, j] * 255.0
+    data[i, j] = min(data[i, j], z_far) / z_far
+    data[i, j] = data[i, j] * 255.
 
 
 # Any class derived from `omni.ext.IExt` in top level module (defined in `python.modules` of `extension.toml`) will be
@@ -46,6 +46,8 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         self.render_event = threading.Event()
         self.worker_thread = None
         self.should_stop = False
+        # Constants
+        self.z_far = 5
 
     # ext_id is current extension id. It can be used with extension manager to query additional information, like where
     # this extension is located on filesystem.
@@ -231,6 +233,7 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         object_to_world_mat: Gf.Matrix4d = Gf.Matrix4d()
         if self._mesh_prim_model.as_string != '':
             stage: Usd.Stage = self.usd_context.get_stage()
+            # meters_per_unit = UsdGeom.GetStageMetersPerUnit(stage)
             selected_prim: Usd.Prim = stage.GetPrimAtPath(self._mesh_prim_model.as_string)
             selected_xform: UsdGeom.Xformable = UsdGeom.Xformable(selected_prim)
             object_to_world_mat = selected_xform.GetLocalTransformation()
@@ -277,7 +280,7 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
             # Receive metadata and image data separately
             metadata = self.zmq_socket.recv_json()
             render_bytes = self.zmq_socket.recv()
-            depth_bytes = self.zmq_socket.recv()
+            inv_depth_bytes = self.zmq_socket.recv()
             
             if 'error' in metadata:
                 print(f"[omni.gsplat.viewport] Error from server: {metadata['error']}")
@@ -287,16 +290,15 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
                 render_img = Image.open(render_buffer)
                 render_np = np.array(render_img) # HWC
                 
-                # Decompress depth image
-                depth_buffer = BytesIO(depth_bytes)
-                depth_img = Image.open(depth_buffer)
-                depth_np = np.array(depth_img) # HW
+                # Decompress inverse depth image
+                inv_depth_buffer = BytesIO(inv_depth_bytes)
+                inv_depth_img = Image.open(inv_depth_buffer)
+                inv_depth_np = np.array(inv_depth_img) # HW
                 
                 image = render_np
                 # Uncomment below to see depth image
-                # z_far = 5
-                # normalized_depth = 1 - np.minimum(depth_np, z_far) / z_far
-                # image = (normalized_depth * 255)[..., np.newaxis].repeat(3, axis=-1)
+                normalized_depth = np.minimum(1 / inv_depth_np, self.z_far) / self.z_far
+                image = (normalized_depth * 255)[..., np.newaxis].repeat(3, axis=-1)
                 
                 # Resize to match viewport dimensions
                 image = cv2.resize(image, (self.rgba_w, self.rgba_h), interpolation=cv2.INTER_LINEAR)
@@ -331,7 +333,7 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         wp.launch(
             normalize_depth,
             dim=(self.rgba_h, self.rgba_w),
-            inputs=[data, 5],
+            inputs=[data, self.z_far],
             device="cuda",
         )
         self.rgba[:,:,:3] = wp.to_torch(data).unsqueeze(2)

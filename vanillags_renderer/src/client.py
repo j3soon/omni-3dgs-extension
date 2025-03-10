@@ -23,7 +23,7 @@ def main():
         # Receive multipart response
         metadata = sender.recv_json()
         render_data = sender.recv()
-        depth_data = sender.recv()
+        inv_depth_data = sender.recv()
         
         if 'error' in metadata:
             print(f"Error from server: {metadata['error']}")
@@ -32,18 +32,18 @@ def main():
         # Decode TIFF image using PIL
         shape = metadata['shape']
         render_img = Image.open(BytesIO(render_data))
-        depth_img = Image.open(BytesIO(depth_data))
+        inv_depth_img = Image.open(BytesIO(inv_depth_data))
         
         # Convert to numpy arrays
         render_np = np.array(render_img)  # HWC
-        depth_np = np.array(depth_img)  # HW
+        inv_depth_np = np.array(inv_depth_img)  # HW
         
         # Display the image
         plt.figure(figsize=(16, 9))
         plt.subplot(1, 2, 1)
         plt.imshow(render_np)
         plt.subplot(1, 2, 2)
-        plt.imshow(depth_np)
+        plt.imshow(inv_depth_np)
         plt.show()
         
     except Exception as e:
