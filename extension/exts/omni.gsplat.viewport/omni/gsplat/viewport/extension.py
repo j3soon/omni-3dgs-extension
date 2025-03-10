@@ -19,12 +19,16 @@ from io import BytesIO
 
 @wp.kernel
 def normalize_depth(
-    data: wp.array2d(dtype=wp.float32),
+    rgba: wp.array3d(dtype=wp.uint8),
+    depth: wp.array2d(dtype=wp.float32),
     z_far: float,
 ):
     i, j = wp.tid()
-    data[i, j] = min(data[i, j], z_far) / z_far
-    data[i, j] = data[i, j] * 255.
+    # Normalize depth to [0, 255]
+    depth[i, j] = (min(depth[i, j], z_far) / z_far) * 255.0
+    # Convert depth to uint8
+    for c in range(3):
+        rgba[i, j, c] = wp.uint8(depth[i, j])
 
 
 # Any class derived from `omni.ext.IExt` in top level module (defined in `python.modules` of `extension.toml`) will be
@@ -325,18 +329,16 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
     def _update_replicator(self):
         if not self.timeline.is_playing() or self.rep_depth_annotator is None:
             return
-        data = self.rep_depth_annotator.get_data() # is warp array with shape (H, W)
+        depth = self.rep_depth_annotator.get_data() # is warp array with shape (H, W)
         # Check data shape since it may be (0,) during initialization
-        if data.shape != (self.rgba_h, self.rgba_w):
+        if depth.shape != (self.rgba_h, self.rgba_w):
             return
-
         wp.launch(
             normalize_depth,
             dim=(self.rgba_h, self.rgba_w),
-            inputs=[data, self.z_far],
+            inputs=[wp.from_torch(self.rgba), depth, self.z_far],
             device="cuda",
         )
-        self.rgba[:,:,:3] = wp.to_torch(data).unsqueeze(2)
 
     def _on_stage_event(self, event):
         """Called by stage_event_stream."""
