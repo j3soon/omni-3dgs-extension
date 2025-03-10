@@ -24,10 +24,8 @@ def fragment_shader(
     depth_3dgs: wp.array2d(dtype=wp.float32),
 ):
     i, j = wp.tid()
-    # Full alpha
-    rgba[i, j, 3] = wp.uint8(255)
     # Depth Test and Alpha Blending
-    if depth_rep[i, j] > depth_3dgs[i, j]:
+    if depth_rep[i, j] < depth_3dgs[i, j]:
         for c in range(3):
             # Rep over 3DGS
             alpha = wp.float32(rgba_rep[i, j, 3]) / 255.0
@@ -356,10 +354,10 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
             # If no mesh is selected, render the dummy image.
             self.rgba[:,:,:3] = ((self.rgba[:,:,:3].int() + 1) % 256).to(th.uint8)
             return
+        self.rgba[:,:,3] = 255
         if not self.timeline.is_playing() or \
             self.rep_depth_annotator is None or \
             self.rep_rgba_annotator is None:
-            self.rgba[:,:,3] = 255
             self.rgba[:,:,:3] = self.rgb_3dgs
             return
         # Replicator data
@@ -368,10 +366,13 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         # Check data shape since it may be (0,) during initialization
         if depth_rep.shape != (self.rgba_h, self.rgba_w) or \
             rgba_rep.shape != (self.rgba_h, self.rgba_w, 4):
-            self.rgba[:,:,3] = 255
             self.rgba[:,:,:3] = self.rgb_3dgs
             return
-        self.rgba[:,:,:4] = wp.to_torch(rgba_rep)[:,:,:4]
+        # if selected prim is not visible, then don't render
+        prim: Usd.Prim = self.usd_context.get_stage().GetPrimAtPath(self._mesh_prim_model.as_string)
+        if prim.GetAttribute("visibility").Get() != "invisible":
+            self.rgba[:,:,:3] = self.rgb_3dgs
+            return
         wp.launch(
             fragment_shader,
             dim=(self.rgba_h, self.rgba_w),
@@ -390,6 +391,8 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         #     inputs=[wp.from_torch(self.rgba), depth_rep, self.z_far],
         #     device="cuda",
         # )
+
+        # Same concept as cudaDeviceSynchronize()
         wp.synchronize()
 
     def _on_stage_event(self, event):
