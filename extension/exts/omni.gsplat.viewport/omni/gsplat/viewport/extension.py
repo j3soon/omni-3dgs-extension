@@ -76,16 +76,11 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         # Will not be triggered when no viewport is visible on the screen.
         # Examples on using `get_rendering_event_stream` can be found by installing Isaac Sim
         # and searching for `get_rendering_event_stream` under `~/.local/share/ov/pkg/isaac_sim-2023.1.1`.
-        # self.rendering_event_stream = self.usd_context.get_rendering_event_stream()
-        # self.rendering_event_delegate = self.rendering_event_stream.create_subscription_to_pop(
-        #     self._on_rendering_event, name="GSplat Viewport Rendering Event"
-        # )
-        # Both rendering and update events are triggered when the viewport is updated.
-        # We use update events to trigger rendering for now.
-        self.update_event_stream = omni.kit.app.get_app().get_update_event_stream()
-        self.update_event_delegate = self.update_event_stream.create_subscription_to_pop(
-            self._on_update_event, name="GSplat Viewport Update Event"
+        self.rendering_event_stream = self.usd_context.get_rendering_event_stream()
+        self.rendering_event_delegate = self.rendering_event_stream.create_subscription_to_pop(
+            self._on_rendering_event, name="GSplat Viewport Rendering Event"
         )
+        # Must use rendering events to trigger rendering, since update events are not synchronized with Replicator.
         # TODO: Consider subscribing to update events
         # Ref: https://docs.omniverse.nvidia.com/dev-guide/latest/programmer_ref/events.html#subscribe-to-update-events
         # Allocate memory
@@ -392,13 +387,17 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
             self._mesh_prim_model.as_string = ''
             self._cleanup()
 
-    def _on_update_event(self, event):
-        """Called by update_event_stream."""
+    def _on_rendering_event(self, event):
+        """Called by rendering_event_stream."""
         if self.rep_depth_annotator is None:
             self.init_replicator()
         if self.render_event.is_set():
             return
         # Update UI to show the rendered image of the previous render event
+        # Know issues:
+        # - The image is not updated immediately after Stopping the timeline.
+        # - The image is not updated immediately after changing the visibility of the mesh prim.
+        # This may cause red artifacts in the image.
         self.ui_3dgs_provider.set_bytes_data_from_gpu(self.rgba.data_ptr(), (self.rgba_w, self.rgba_h))
 
         # Prepare data for the next render event
