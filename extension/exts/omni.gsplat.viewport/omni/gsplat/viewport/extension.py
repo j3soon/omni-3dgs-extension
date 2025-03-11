@@ -386,6 +386,11 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
             print(f"[omni.gsplat.viewport] Stage Closing")
             self._mesh_prim_model.as_string = ''
             self._cleanup()
+        elif event.type == int(omni.usd.StageEventType.ASSETS_LOADED):
+            print(f"[omni.gsplat.viewport] Assets Loaded")
+            # Invalidate the previous camera pose to force redraw
+            self.prev_camera_to_object_pos = None
+            self.prev_camera_to_object_rot = None
 
     def _on_rendering_event(self, event):
         """Called by rendering_event_stream."""
@@ -395,9 +400,9 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
             return
         # Update UI to show the rendered image of the previous render event
         # Know issues:
-        # - The image is not updated immediately after Stopping the timeline.
-        # - The image is not updated immediately after changing the visibility of the mesh prim.
-        # This may cause red artifacts in the image.
+        # The image may flicker (red) for a single frame
+        # - after stopping the timeline while the mesh prim is visible.
+        # - after making the mesh prim invisible while the timeline is playing.
         self.ui_3dgs_provider.set_bytes_data_from_gpu(self.rgba.data_ptr(), (self.rgba_w, self.rgba_h))
 
         # Prepare data for the next render event
