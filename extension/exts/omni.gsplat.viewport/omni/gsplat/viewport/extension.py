@@ -290,7 +290,7 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         }
 
         # Convert rgba_rep and depth_rep to numpy arrays
-        rgb_np = (wp.to_torch(self.rgba_rep)[:,:,:3] * 255).cpu().numpy()  # Convert to numpy array
+        rgb_np = (wp.to_torch(self.rgba_rep)[:,:,:3]).cpu().numpy()  # Convert to numpy array
         depth_np = wp.to_torch(self.depth_rep).cpu().numpy()  # Convert to numpy array
 
         # Convert numpy arrays to PIL Images
@@ -364,6 +364,8 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         )
         # Same concept as cudaDeviceSynchronize()
         wp.synchronize()
+        # Uncomment below to show replicator image
+        # self.rgba[:,:,:3] = wp.to_torch(self.rgba_rep)[:,:,:3]
 
     def _update_and_frame_buffer(self):
         if self.mesh_prim_path == '' and not self.timeline_is_playing:
