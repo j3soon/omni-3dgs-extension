@@ -15,6 +15,12 @@ from PIL import Image
 from io import BytesIO
 
 
+# TODO: Maybe this part should be moved into the 3DGS rasterizer.
+# The Omni rendered rgb/depth would be sent to the 3DGS renderer, and
+# the 3DGS renderer would correctly depth test and alpha blend to output
+# the final rgb. Although this doesn't handle translucent objects in
+# Omniverse (e.g. Omni glass), it can correctly handle translucent
+# gaussians in 3DGS (e.g. 3DGS floater).
 @wp.kernel
 def fragment_shader(
     rgba: wp.array3d(dtype=wp.uint8),
@@ -23,8 +29,12 @@ def fragment_shader(
     rgb_3dgs: wp.array3d(dtype=wp.uint8),
     depth_3dgs: wp.array2d(dtype=wp.float32),
 ):
+    # Note that this is not a real fragment shader, since we do not
+    # depth test and alpha blend each pixel. Therefore, cannot handle
+    # translucent objects such as Omni glass or 3DGS floaters.
     i, j = wp.tid()
     # Depth Test and Alpha Blending
+    # TODO: 3DGS depth doesn't seem reliable enough due to floaters.
     if depth_rep[i, j] < depth_3dgs[i, j]:
         for c in range(3):
             # Rep over 3DGS
@@ -33,6 +43,7 @@ def fragment_shader(
     else:
         for c in range(3):
             # 3DGS over Rep
+            # TODO: Modify 3DGS renderer to output alpha channel.
             rgba[i, j, c] = rgb_3dgs[i, j, c]
 
 @wp.kernel
