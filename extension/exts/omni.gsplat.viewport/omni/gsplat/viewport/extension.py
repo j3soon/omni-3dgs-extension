@@ -57,8 +57,13 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
 
     def __init__(self):
         super().__init__()
-        self.camera_position: Gf.Vec3d = None
-        self.camera_rotation: Gf.Vec3d = None
+        self.prev_camera_to_object_pos: Gf.Vec3d = None
+        self.prev_camera_to_object_rot: Gf.Vec3d = None
+        self.camera_to_object_pos: Gf.Vec3d = None
+        self.camera_to_object_rot: Gf.Vec3d = None
+        self.mesh_prim_path: str = None
+        self.mesh_prim_visibility: str = None
+        self.timeline_is_playing: bool = None
         # Replicator annotators
         self.rep_depth_annotator = None
         self.rep_rgba_annotator = None
@@ -69,7 +74,7 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         self.render_event = threading.Event()
         self.worker_thread = None
         self.should_stop = False
-        # Constants
+        # Only used when rendering depth
         self.z_far = 5
 
     # ext_id is current extension id. It can be used with extension manager to query additional information, like where
@@ -102,6 +107,8 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         self.rgba = th.ones((self.rgba_h, self.rgba_w, 4), dtype=th.uint8, device="cuda") * 128
         """RGBA image buffer. The shape is (H, W, 4), following the NumPy convention."""
         self.rgba[:,:,3] = 255
+        self.rgba_rep = wp.zeros((self.rgba_h, self.rgba_w, 4), dtype=wp.uint8, device="cuda")
+        self.depth_rep = wp.zeros((self.rgba_h, self.rgba_w), dtype=wp.float32, device="cuda")
         self.rgb_3dgs = th.zeros((self.rgba_h, self.rgba_w, 3), dtype=th.uint8, device="cuda")
         self.depth_3dgs = th.full((self.rgba_h, self.rgba_w), float('inf'), dtype=th.float32, device="cuda")
         # Init warp and disable verbose output
@@ -287,13 +294,13 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         return camera_to_object_pos, camera_to_object_rot
 
     def _fill_3dgs_buffers(self):
-        if self._mesh_prim_model.as_string == '':
+        if self.mesh_prim_path == '':
             return
-        camera_to_object_pos, camera_to_object_rot = self._get_camera_pose()
-        if camera_to_object_pos == self.camera_position and camera_to_object_rot == self.camera_rotation:
+        camera_to_object_pos, camera_to_object_rot = self.camera_to_object_pos, self.camera_to_object_rot
+        if camera_to_object_pos == self.prev_camera_to_object_pos and camera_to_object_rot == self.prev_camera_to_object_rot:
             return
-        self.camera_position = camera_to_object_pos
-        self.camera_rotation = camera_to_object_rot
+        self.prev_camera_to_object_pos = camera_to_object_pos
+        self.prev_camera_to_object_rot = camera_to_object_rot
         
         # Prepare camera pose data
         pose_data = {
@@ -335,42 +342,38 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         """Worker thread that processes render requests when event is set"""
         print("[omni.gsplat.viewport] Render worker started")
         th.set_grad_enabled(False) # disable gradient calculation
+        # Note that we don't touch UI in the worker thread
         while not self.should_stop:
             # Wait for render event
             self.render_event.wait()
-            self.render_event.clear()
             try:
                 # No need to check event type, since there is only one event type: `NEW_FRAME`.
                 self._fill_3dgs_buffers()
             except Exception as e:
                 print(f"[omni.gsplat.viewport] Error in render worker: {e}")
             self._update_and_frame_buffer()
-            # Update UI
-            self.ui_3dgs_provider.set_bytes_data_from_gpu(self.rgba.data_ptr(), (self.rgba_w, self.rgba_h))
+            # Signal after rendering is done
+            self.render_event.clear()
         print("[omni.gsplat.viewport] Render worker stopped")
 
     def _update_and_frame_buffer(self):
-        if self._mesh_prim_model.as_string == '' and not self.timeline.is_playing():
+        if self.mesh_prim_path == '' and not self.timeline_is_playing:
             # If no mesh is selected, render the dummy image.
             self.rgba[:,:,:3] = ((self.rgba[:,:,:3].int() + 1) % 256).to(th.uint8)
             return
         self.rgba[:,:,3] = 255
-        if not self.timeline.is_playing() or \
+        if not self.timeline_is_playing or \
             self.rep_depth_annotator is None or \
             self.rep_rgba_annotator is None:
             self.rgba[:,:,:3] = self.rgb_3dgs
             return
-        # Replicator data
-        depth_rep = self.rep_depth_annotator.get_data() # is warp array with shape (H, W)
-        rgba_rep = self.rep_rgba_annotator.get_data() # is warp array with shape (H, W, 4)
         # Check data shape since it may be (0,) during initialization
-        if depth_rep.shape != (self.rgba_h, self.rgba_w) or \
-            rgba_rep.shape != (self.rgba_h, self.rgba_w, 4):
+        if self.depth_rep.shape != (self.rgba_h, self.rgba_w) or \
+            self.rgba_rep.shape != (self.rgba_h, self.rgba_w, 4):
             self.rgba[:,:,:3] = self.rgb_3dgs
             return
         # if selected prim is not visible, then don't render
-        prim: Usd.Prim = self.usd_context.get_stage().GetPrimAtPath(self._mesh_prim_model.as_string)
-        if prim.GetAttribute("visibility").Get() != "invisible":
+        if self.mesh_prim_visibility != "invisible":
             self.rgba[:,:,:3] = self.rgb_3dgs
             return
         wp.launch(
@@ -378,7 +381,7 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
             dim=(self.rgba_h, self.rgba_w),
             inputs=[
                 wp.from_torch(self.rgba),
-                rgba_rep, depth_rep,
+                self.rgba_rep, self.depth_rep,
                 wp.from_torch(self.rgb_3dgs),
                 wp.from_torch(self.depth_3dgs),
             ],
@@ -388,7 +391,7 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         # wp.launch(
         #     normalize_depth,
         #     dim=(self.rgba_h, self.rgba_w),
-        #     inputs=[wp.from_torch(self.rgba), depth_rep, self.z_far],
+        #     inputs=[wp.from_torch(self.rgba), self.depth_rep, self.z_far],
         #     device="cuda",
         # )
 
@@ -410,6 +413,22 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
             self.init_replicator()
         if self.render_event.is_set():
             return
+        # Update UI to show the rendered image of the previous render event
+        self.ui_3dgs_provider.set_bytes_data_from_gpu(self.rgba.data_ptr(), (self.rgba_w, self.rgba_h))
+
+        # Prepare data for the next render event
+        # Get all scene-related data in the main (UI) thread to prevent race condition and synchronization issues
+        # Get Replicator data
+        self.depth_rep = self.rep_depth_annotator.get_data() # is warp array with shape (H, W)
+        self.rgba_rep = self.rep_rgba_annotator.get_data() # is warp array with shape (H, W, 4)
+        # Get camera pose
+        self.camera_to_object_pos, self.camera_to_object_rot = self._get_camera_pose()
+        self.mesh_prim_path = self._mesh_prim_model.as_string
+        if self.mesh_prim_path != '':
+            prim: Usd.Prim = self.usd_context.get_stage().GetPrimAtPath(self.mesh_prim_path)
+            self.mesh_prim_visibility = prim.GetAttribute("visibility").Get()
+        self.timeline_is_playing = self.timeline.is_playing()
+        # Signal to render worker to start rendering
         self.render_event.set()
 
     def _cleanup(self):
@@ -435,6 +454,7 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         if self.zmq_context:
             self.zmq_context.term()
         self._cleanup()
+
     def destroy(self):
         # Ref: https://docs.omniverse.nvidia.com/workflows/latest/extensions/object_info.html#step-3-4-use-usdcontext-to-listen-for-selection-changes
         self.rendering_event_stream = None
