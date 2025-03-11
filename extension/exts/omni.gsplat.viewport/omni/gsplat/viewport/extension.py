@@ -15,37 +15,6 @@ from PIL import Image
 from io import BytesIO
 
 
-# TODO: Maybe this part should be moved into the 3DGS rasterizer.
-# The Omni rendered rgb/depth would be sent to the 3DGS renderer, and
-# the 3DGS renderer would correctly depth test and alpha blend to output
-# the final rgb. Although this doesn't handle translucent objects in
-# Omniverse (e.g. Omni glass), it can correctly handle translucent
-# gaussians in 3DGS (e.g. 3DGS floater).
-@wp.kernel
-def fragment_shader(
-    rgba: wp.array3d(dtype=wp.uint8),
-    rgba_rep: wp.array3d(dtype=wp.uint8),
-    depth_rep: wp.array2d(dtype=wp.float32),
-    rgb_3dgs: wp.array3d(dtype=wp.uint8),
-    depth_3dgs: wp.array2d(dtype=wp.float32),
-):
-    # Note that this is not a real fragment shader, since we do not
-    # depth test and alpha blend each pixel. Therefore, cannot handle
-    # translucent objects such as Omni glass or 3DGS floaters.
-    i, j = wp.tid()
-    # Depth Test and Alpha Blending
-    # TODO: 3DGS depth doesn't seem reliable enough due to floaters.
-    if depth_rep[i, j] < depth_3dgs[i, j]:
-        for c in range(3):
-            # Rep over 3DGS
-            alpha = wp.float32(rgba_rep[i, j, 3]) / 255.0
-            rgba[i, j, c] = wp.uint8(alpha * wp.float32(rgba_rep[i, j, c]) + (1.0 - alpha) * wp.float32(rgb_3dgs[i, j, c]))
-    else:
-        for c in range(3):
-            # 3DGS over Rep
-            # TODO: Modify 3DGS renderer to output alpha channel.
-            rgba[i, j, c] = rgb_3dgs[i, j, c]
-
 @wp.kernel
 def normalize_depth(
     rgba: wp.array3d(dtype=wp.uint8),
@@ -107,9 +76,15 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         # Will not be triggered when no viewport is visible on the screen.
         # Examples on using `get_rendering_event_stream` can be found by installing Isaac Sim
         # and searching for `get_rendering_event_stream` under `~/.local/share/ov/pkg/isaac_sim-2023.1.1`.
-        self.rendering_event_stream = self.usd_context.get_rendering_event_stream()
-        self.rendering_event_delegate = self.rendering_event_stream.create_subscription_to_pop(
-            self._on_rendering_event, name="GSplat Viewport Rendering Event"
+        # self.rendering_event_stream = self.usd_context.get_rendering_event_stream()
+        # self.rendering_event_delegate = self.rendering_event_stream.create_subscription_to_pop(
+        #     self._on_rendering_event, name="GSplat Viewport Rendering Event"
+        # )
+        # Both rendering and update events are triggered when the viewport is updated.
+        # We use update events to trigger rendering for now.
+        self.update_event_stream = omni.kit.app.get_app().get_update_event_stream()
+        self.update_event_delegate = self.update_event_stream.create_subscription_to_pop(
+            self._on_update_event, name="GSplat Viewport Update Event"
         )
         # TODO: Consider subscribing to update events
         # Ref: https://docs.omniverse.nvidia.com/dev-guide/latest/programmer_ref/events.html#subscribe-to-update-events
@@ -318,7 +293,25 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
             'position': list(camera_to_object_pos),
             'rotation': list(np.deg2rad(camera_to_object_rot))
         }
-        self.zmq_socket.send_json(pose_data)
+
+        # Convert rgba_rep and depth_rep to numpy arrays
+        rgb_np = (wp.to_torch(self.rgba_rep)[:,:,:3] * 255).cpu().numpy()  # Convert to numpy array
+        depth_np = wp.to_torch(self.depth_rep).cpu().numpy()  # Convert to numpy array
+
+        # Convert numpy arrays to PIL Images
+        rgb_img = Image.fromarray(rgb_np.astype(np.uint8))
+        depth_img = Image.fromarray(depth_np, mode='F')  # 'F' mode for float32
+
+        # Compress as TIFF
+        rgb_buffer = BytesIO()
+        depth_buffer = BytesIO()
+        rgb_img.save(rgb_buffer, format='TIFF')
+        depth_img.save(depth_buffer, format='TIFF')
+
+        # Send multipart message
+        self.zmq_socket.send_json(pose_data, zmq.SNDMORE)
+        self.zmq_socket.send(rgb_buffer.getvalue(), zmq.SNDMORE)
+        self.zmq_socket.send(depth_buffer.getvalue())
         
         # Receive metadata and image data separately
         metadata = self.zmq_socket.recv_json()
@@ -340,15 +333,6 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
             inv_depth_np = np.array(inv_depth_img) # HW
             self.depth_3dgs[:] = 1 / th.from_numpy(inv_depth_np).to("cuda") # HW
 
-            image = render_np
-            # Uncomment below to see depth image
-            # normalized_depth = np.minimum(1 / inv_depth_np, self.z_far) / self.z_far
-            # image = (normalized_depth * 255)[..., np.newaxis].repeat(3, axis=-1)
-            
-            # Resize to match viewport dimensions
-            # image = cv2.resize(image, (self.rgba_w, self.rgba_h), interpolation=cv2.INTER_LINEAR)
-            # self.rgba[:,:,:3] = th.from_numpy(image).to(device="cuda")
-
     def _render_worker(self):
         """Worker thread that processes render requests when event is set"""
         print("[omni.gsplat.viewport] Render worker started")
@@ -357,6 +341,15 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         while not self.should_stop:
             # Wait for render event
             self.render_event.wait()
+            # Check data shape since it may be (0,) during initialization
+            if not self.timeline_is_playing or \
+                self.rep_depth_annotator is None or \
+                self.rep_rgba_annotator is None or \
+                self.depth_rep.shape != (self.rgba_h, self.rgba_w) or \
+                self.rgba_rep.shape != (self.rgba_h, self.rgba_w, 4):
+                # Don't use background image feature if not available
+                self.rgba_rep = wp.from_torch(th.zeros((self.rgba_h, self.rgba_w, 4), dtype=th.uint8, device="cuda"))
+                self.depth_rep = wp.from_torch(th.full((self.rgba_h, self.rgba_w), float('inf'), dtype=th.float32, device="cuda"))
             try:
                 # No need to check event type, since there is only one event type: `NEW_FRAME`.
                 self._fill_3dgs_buffers()
@@ -367,47 +360,28 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
             self.render_event.clear()
         print("[omni.gsplat.viewport] Render worker stopped")
 
+    def _set_rgba_to_depth(self):
+        wp.launch(
+            normalize_depth,
+            dim=(self.rgba_h, self.rgba_w),
+            inputs=[wp.from_torch(self.rgba), self.depth_rep, self.z_far],
+            device="cuda",
+        )
+        # Same concept as cudaDeviceSynchronize()
+        wp.synchronize()
+
     def _update_and_frame_buffer(self):
         if self.mesh_prim_path == '' and not self.timeline_is_playing:
             # If no mesh is selected, render the dummy image.
             self.rgba[:,:,:3] = ((self.rgba[:,:,:3].int() + 1) % 256).to(th.uint8)
             return
         self.rgba[:,:,3] = 255
-        if not self.timeline_is_playing or \
-            self.rep_depth_annotator is None or \
-            self.rep_rgba_annotator is None:
-            self.rgba[:,:,:3] = self.rgb_3dgs
-            return
-        # Check data shape since it may be (0,) during initialization
-        if self.depth_rep.shape != (self.rgba_h, self.rgba_w) or \
-            self.rgba_rep.shape != (self.rgba_h, self.rgba_w, 4):
-            self.rgba[:,:,:3] = self.rgb_3dgs
-            return
-        # if selected prim is not visible, then don't render
-        if self.mesh_prim_visibility != "invisible":
-            self.rgba[:,:,:3] = self.rgb_3dgs
-            return
-        wp.launch(
-            fragment_shader,
-            dim=(self.rgba_h, self.rgba_w),
-            inputs=[
-                wp.from_torch(self.rgba),
-                self.rgba_rep, self.depth_rep,
-                wp.from_torch(self.rgb_3dgs),
-                wp.from_torch(self.depth_3dgs),
-            ],
-            device="cuda",
-        )
-        # Uncomment below to normalize depth
-        # wp.launch(
-        #     normalize_depth,
-        #     dim=(self.rgba_h, self.rgba_w),
-        #     inputs=[wp.from_torch(self.rgba), self.depth_rep, self.z_far],
-        #     device="cuda",
-        # )
 
-        # Same concept as cudaDeviceSynchronize()
-        wp.synchronize()
+        if self.mesh_prim_visibility != "invisible" and self.timeline_is_playing:
+            self._set_rgba_to_depth()
+            return
+
+        self.rgba[:,:,:3] = self.rgb_3dgs
 
     def _on_stage_event(self, event):
         """Called by stage_event_stream."""
@@ -418,8 +392,8 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
             self._mesh_prim_model.as_string = ''
             self._cleanup()
 
-    def _on_rendering_event(self, event):
-        """Called by rendering_event_stream."""
+    def _on_update_event(self, event):
+        """Called by update_event_stream."""
         if self.rep_depth_annotator is None:
             self.init_replicator()
         if self.render_event.is_set():

@@ -13,12 +13,28 @@ def main():
     # Create test pose data with euler angles (XYZ) in radians
     test_data = {
         'position': [0.0, 0.0, 1.0],
-        'rotation': [0.0, 0.0, 0.0]
+        'rotation': [0.0, 0.0, 0.0],
     }
     
+    # Create example background RGB (red) and depth (all 3.0)
+    bg_rgb_np = np.ones((720, 1280, 3), dtype=np.float32) * np.array([1.0, 0.0, 0.0])
+    bg_depth_np = np.full((720, 1280), 3.0, dtype=np.float32)
+    
+    # Convert numpy arrays to PIL Images
+    bg_rgb_img = Image.fromarray((bg_rgb_np * 255).astype(np.uint8))
+    bg_depth_img = Image.fromarray(bg_depth_np, mode='F')  # 'F' mode for float32
+    
+    # Compress as TIFF
+    bg_rgb_buffer = BytesIO()
+    bg_depth_buffer = BytesIO()
+    bg_rgb_img.save(bg_rgb_buffer, format='TIFF')
+    bg_depth_img.save(bg_depth_buffer, format='TIFF')
+    
     try:
-        # Send request
-        sender.send_json(test_data)
+        # Send multipart message
+        sender.send_json(test_data, zmq.SNDMORE)
+        sender.send(bg_rgb_buffer.getvalue(), zmq.SNDMORE)
+        sender.send(bg_depth_buffer.getvalue())
         
         # Receive multipart response
         metadata = sender.recv_json()

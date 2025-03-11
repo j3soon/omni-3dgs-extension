@@ -109,36 +109,48 @@ def main():
     gaussians.load_ply(checkpt_path)
     pipeline = PipelineParamsNoparse()
     background = torch.tensor([0, 0, 0], dtype=torch.float32, device="cuda")
+    bg_rgb = torch.ones((3, 720, 1280), dtype=torch.float32, device="cuda") * torch.tensor([1.0, 0.0, 0.0], device="cuda").reshape(3, 1, 1)
+    bg_depth = torch.full((720, 1280), float('inf'), dtype=torch.float32, device="cuda")
     
     print("Gaussian Splatting renderer ready for requests...")
     
     while True:
         try:
-            data = receiver.recv_json()
+            # Receive multipart message
+            metadata = receiver.recv_json()
+            bg_rgb_data = receiver.recv()
+            bg_depth_data = receiver.recv()
+            # Decompress TIFF data
+            bg_rgb_img = Image.open(BytesIO(bg_rgb_data))
+            bg_depth_img = Image.open(BytesIO(bg_depth_data))
+            # Convert to numpy then to torch tensor
+            bg_rgb_np = np.array(bg_rgb_img)  # HWC
+            bg_depth_np = np.array(bg_depth_img)
+            # Update background RGB and depth
+            bg_rgb = torch.from_numpy(bg_rgb_np).float().to("cuda").permute(2, 0, 1) / 255  # Convert HWC to CHW
+            bg_depth = torch.from_numpy(bg_depth_np).float().to("cuda")
 
+            # Render
             camera = create_camera_from_pose(
-                np.array(data['position']), 
-                np.array(data['rotation'])
+                np.array(metadata['position']), 
+                np.array(metadata['rotation'])
             )
-            render_res = render(camera, gaussians, pipeline, background)
+            render_res = render(camera, gaussians, pipeline, background, bg_rgb, bg_depth)
+
             # Convert from CHW (torch) to HWC (numpy)
             # Need to ensure array is C contiguous before JPEG encoding
             render_np = (render_res["render"].permute(1, 2, 0) * 255).to(torch.uint8).detach().cpu(memory_format=torch.contiguous_format).numpy()
             # The "depth" here actually contains the inverse depth
             # Ref: https://github.com/graphdeco-inria/diff-gaussian-rasterization/blob/9c5c2028f6fbee2be239bc4c9421ff894fe4fbe0/rasterize_points.cu#L123
             inv_depth_np = render_res["depth"].permute(1, 2, 0).detach().cpu(memory_format=torch.contiguous_format).numpy()
-            
             # Convert numpy arrays to PIL Images and compress as TIFF
             render_img = Image.fromarray(render_np)
             inv_depth_img = Image.fromarray(inv_depth_np.squeeze(), mode='F')  # 'F' mode for float32
-            
             # Save to bytes buffer
             render_buffer = BytesIO()
             inv_depth_buffer = BytesIO()
-            
             render_img.save(render_buffer, format='TIFF')
             inv_depth_img.save(inv_depth_buffer, format='TIFF')
-            
             compressed_render = render_buffer.getvalue()
             compressed_inv_depth = inv_depth_buffer.getvalue()
             

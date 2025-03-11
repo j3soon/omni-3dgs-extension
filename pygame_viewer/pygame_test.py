@@ -1,12 +1,12 @@
 import argparse
 import time
+import io
 
 import cv2
 import numpy as np
 import pygame
 import zmq
 from PIL import Image
-import io
 
 
 def parse_args():
@@ -57,7 +57,25 @@ def main(args):
         }
 
         try:
-            socket.send_json(pose_data)
+            # Create example background RGB (blue) and depth (all 1.2)
+            bg_rgb_np = np.ones((720, 1280, 3), dtype=np.float32) * np.array([0.0, 0.0, 1.0])
+            bg_depth_np = np.full((720, 1280), 1.2, dtype=np.float32)
+            
+            # Convert numpy arrays to PIL Images
+            bg_rgb_img = Image.fromarray((bg_rgb_np * 255).astype(np.uint8))
+            bg_depth_img = Image.fromarray(bg_depth_np, mode='F')  # 'F' mode for float32
+            
+            # Compress as TIFF
+            bg_rgb_buffer = io.BytesIO()
+            bg_depth_buffer = io.BytesIO()
+            bg_rgb_img.save(bg_rgb_buffer, format='TIFF')
+            bg_depth_img.save(bg_depth_buffer, format='TIFF')
+
+            # Send multipart message
+            socket.send_json(pose_data, zmq.SNDMORE)
+            socket.send(bg_rgb_buffer.getvalue(), zmq.SNDMORE)
+            socket.send(bg_depth_buffer.getvalue())
+
             # Receive multipart response
             metadata = socket.recv_json()
             compressed_render = socket.recv()
