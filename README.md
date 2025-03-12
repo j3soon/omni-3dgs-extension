@@ -33,7 +33,7 @@ cd omni-3dgs-extension
 Download assets:
 
 ```sh
-wget https://github.com/j3soon/omni-3dgs-extension/releases/download/v0.0.1/assets.zip
+wget https://github.com/j3soon/omni-3dgs-extension/releases/download/v0.0.2/assets.zip
 unzip assets.zip
 ```
 
