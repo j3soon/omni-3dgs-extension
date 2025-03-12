@@ -278,8 +278,9 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         if self.mesh_prim_path == '':
             return
         camera_to_object_pos, camera_to_object_rot = self.camera_to_object_pos, self.camera_to_object_rot
-        if camera_to_object_pos == self.prev_camera_to_object_pos and camera_to_object_rot == self.prev_camera_to_object_rot:
-            return
+        # Uncomment for Eco Mode
+        # if camera_to_object_pos == self.prev_camera_to_object_pos and camera_to_object_rot == self.prev_camera_to_object_rot:
+        #     return
         self.prev_camera_to_object_pos = camera_to_object_pos
         self.prev_camera_to_object_rot = camera_to_object_rot
         
@@ -388,11 +389,12 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
             print(f"[omni.gsplat.viewport] Stage Closing")
             self._mesh_prim_model.as_string = ''
             self._cleanup()
-        elif event.type == int(omni.usd.StageEventType.ASSETS_LOADED):
-            print(f"[omni.gsplat.viewport] Assets Loaded")
-            # Invalidate the previous camera pose to force redraw
-            self.prev_camera_to_object_pos = None
-            self.prev_camera_to_object_rot = None
+        # Uncomment for Eco Mode
+        # elif event.type == int(omni.usd.StageEventType.ASSETS_LOADED):
+        #     print(f"[omni.gsplat.viewport] Assets Loaded")
+        #     # Invalidate the previous camera pose to force redraw
+        #     self.prev_camera_to_object_pos = None
+        #     self.prev_camera_to_object_rot = None
 
     def _on_rendering_event(self, event):
         """Called by rendering_event_stream."""
