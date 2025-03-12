@@ -92,6 +92,12 @@ Attach to the container and start the renderer:
 docker exec -it vanillags-renderer bash -ic "python /src/main.py"
 ```
 
+and use the simple client to test the renderer:
+
+```sh
+docker exec -it vanillags-renderer bash -ic "python /src/client.py"
+```
+
 ### PyGame Viewer
 
 Code: [`pygame_viewer`](./pygame_viewer)
@@ -103,6 +109,8 @@ docker exec -it pygame-viewer /src/run.sh
 ```
 
 https://github.com/user-attachments/assets/8beea55b-b6ba-4a91-95c6-6fb8505a27db
+
+> The latest version of the PyGame viewer contains a red plane with fixed distance to the camera.
 
 ### Isaac Sim Viewer
 
@@ -133,8 +141,30 @@ docker exec -it isaac-sim-viewer bash
 
 https://github.com/user-attachments/assets/6da05279-73c5-4cdc-ba9a-33cd9fa28f65
 
+For composition between Omniverse render and 3DGS, please refer to the following steps:
+
+1. Select the folder `/workspace/usd`
+2. Open the file `example_scene_objects.usd`
+3. Click the mesh that you added in Step 2.
+4. Press the button in 3DGS Viewport to update the input mesh of 3DGS.
+5. Check the `Viewport Overlay` checkbox in 3DGS Viewport.
+6. Press the `Play` button. The 3DGS Viewport will render the Omniverse-rendered depth.
+7. Click the eye button of the mesh to hide it. The 3DGS Viewport will show the composition result.
+
+![](docs/media/omni-3dgs-composition.png)
+
 **Known Issues**:
 - Cannot correctly handling non-uniform scaling of the object mesh yet.
+
+## Rendering Backends
+
+Currently supported rendering backends:
+
+| Renderer | Code | Docker Image | Paper |
+| -------- | ---- | ------------ | ----- |
+| VanillaGS | [`j3soon/gaussian-splatting` `bg-img-forward` branch](https://github.com/j3soon/gaussian-splatting/tree/bg-img-forward) | [`j3soon/gaussian_splatting:bg-img-forward`](https://hub.docker.com/repository/docker/j3soon/gaussian_splatting/tags?name=bg-img-forward) | [SIGGRAPH 2023](https://arxiv.org/abs/2308.04079) |
+
+Note that the depth test and alpha blending with Omniverse rendered background are intentionally implemented in the 3DGS rasterizer backend.
 
 ## Development Notes
 
@@ -156,11 +186,10 @@ cd extension
 # open the `extension` folder in VSCode
 ```
 
-After modifying code, you can restart Isaac Sim to apply changes. The docker container can be re-used since the code is mounted as a volume. If the change is small, it is often faster to disable and re-enable the extension in the Isaac Sim UI. This can be done through `Window > Extensions > NVIDIA > General`, search `nerf`, and then un-toggle and re-toggle the extension.
+After modifying code, you can restart Isaac Sim to apply changes. The docker container can be re-used since the code is mounted as a volume. If the change is small, it is often faster to disable and re-enable the extension in the Isaac Sim UI. This can be done through `Window > Extensions > NVIDIA > General`, search `gsplat`, and then un-toggle and re-toggle the extension.
 
 ## Future Directions
 
-- Support multiple 3DGS/USD renderings in a single scene potentially through [Compositioning](https://docs.nerf.studio/extensions/blender_addon.html#compositing-nerf-objects-in-nerf-environments).
 - Communication between the renderer and the viewer is currently done through ZMQ IPC and JEPG compression. However it may be more efficient to use [CUDA IPC](https://github.com/NVIDIA/cuda-samples/tree/master/Samples/0_Introduction/simpleIPC) to bypass copy between GPU memory and CPU memory.
 - Include more 3DGS renderers.
 
