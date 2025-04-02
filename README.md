@@ -82,6 +82,8 @@ To remove and stop the containers, run:
 docker compose down
 ```
 
+This project includes a custom 3DGS renderer (VanillaGS) and a frontend viewer (Isaac Sim). The renderer must be ran along with the viewer for correct visualization.
+
 ### VanillaGS Renderer
 
 Code: [`vanillags_renderer`](./vanillags_renderer)
@@ -98,7 +100,7 @@ and use the simple client to test the renderer:
 docker exec -it vanillags-renderer bash -ic "python /src/client.py"
 ```
 
-### PyGame Viewer
+### (Optional) PyGame Viewer
 
 Code: [`pygame_viewer`](./pygame_viewer)
 
@@ -153,6 +155,8 @@ For composition between Omniverse render and 3DGS, please refer to the following
 
 ![](docs/media/omni-3dgs-composition.png)
 
+If the viewer is grayed out, please check if the 3DGS renderer (VanillaGS) is running.
+
 **Known Issues**:
 - Cannot correctly handling non-uniform scaling of the object mesh yet.
 
@@ -162,7 +166,7 @@ Currently supported rendering backends:
 
 | Renderer | Code | Docker Image | Paper |
 | -------- | ---- | ------------ | ----- |
-| VanillaGS | [`j3soon/gaussian-splatting` `bg-img-forward` branch](https://github.com/j3soon/gaussian-splatting/tree/bg-img-forward) | [`j3soon/gaussian_splatting:bg-img-forward`](https://hub.docker.com/repository/docker/j3soon/gaussian_splatting/tags?name=bg-img-forward) | [SIGGRAPH 2023](https://arxiv.org/abs/2308.04079) |
+| VanillaGS | [`j3soon/gaussian-splatting` (`bg-img-forward` branch)](https://github.com/j3soon/gaussian-splatting/tree/bg-img-forward) | [`j3soon/gaussian_splatting:bg-img-forward`](https://hub.docker.com/repository/docker/j3soon/gaussian_splatting/tags?name=bg-img-forward) | [SIGGRAPH 2023](https://arxiv.org/abs/2308.04079) |
 
 Note that the depth test and alpha blending with Omniverse rendered background are intentionally implemented in the 3DGS rasterizer backend.
 
