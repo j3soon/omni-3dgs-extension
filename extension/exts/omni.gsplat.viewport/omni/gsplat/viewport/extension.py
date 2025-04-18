@@ -112,6 +112,8 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
 
     def init_replicator(self):
         """Initialize Replicator connection"""
+        # Disable anti-aliasing to avoid unwanted noise in simulated depth images
+        rep.settings.set_render_rtx_realtime(antialiasing="Off")
         viewport_api = get_active_viewport()
         cam_prim_path = viewport_api.camera_path.pathString
         self.render_product_path = rep.create.render_product(
