@@ -1,14 +1,14 @@
 import threading
 
-# # Install packages at runtime for now, since I haven't figured out how to install them during Kit app build yet.
-# # TODO: Should install these packages during build instead of at runtime.
-# # Ref: https://docs.omniverse.nvidia.com/kit/docs/kit-manual/latest/guide/using_pip_packages.html
-# import omni.kit.pipapi
-# omni.kit.pipapi.install("numpy")
-# omni.kit.pipapi.install("Pillow", module="PIL")
-# omni.kit.pipapi.install("torch")
-# omni.kit.pipapi.install("warp-lang", module="warp")
-# omni.kit.pipapi.install("pyzmq", module="zmq")
+# Install packages at runtime for now, since I haven't figured out how to install them during Kit app build yet.
+# TODO: Should install these packages during build instead of at runtime.
+# Ref: https://docs.omniverse.nvidia.com/kit/docs/kit-manual/latest/guide/using_pip_packages.html
+import omni.kit.pipapi
+omni.kit.pipapi.install("numpy")
+omni.kit.pipapi.install("Pillow", module="PIL")
+omni.kit.pipapi.install("torch")
+omni.kit.pipapi.install("warp-lang", module="warp")
+omni.kit.pipapi.install("pyzmq", module="zmq")
 
 import numpy as np
 import omni.ext
@@ -43,15 +43,15 @@ def normalize_depth(
 # instantiated when extension gets enabled and `on_startup(ext_id)` will be called. Later when extension gets disabled
 # on_shutdown() is called.
 class OmniGSplatViewportExtension(omni.ext.IExt):
-    # # Static instance variable for singleton access
-    # _instance = None
+    # Static instance variable for singleton access
+    _instance = None
 
     # Name as omni.gsplat.viewport since omni.3dgs.viewport is not a valid name.
 
     def __init__(self):
         super().__init__()
-        # # Store instance in static variable
-        # OmniGSplatViewportExtension._instance = self
+        # Store instance in static variable
+        OmniGSplatViewportExtension._instance = self
         self.prev_camera_to_object_pos: Gf.Vec3d = None
         self.prev_camera_to_object_rot: Gf.Vec3d = None
         self.camera_to_object_pos: Gf.Vec3d = None
@@ -126,10 +126,12 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         self.zmq_socket = self.zmq_context.socket(zmq.REQ)
         self.zmq_socket.connect("ipc:///tmp/omni-3dgs-extension/vanillags_renderer")
 
-    # def init_streaming(self):
-    #     self.init_replicator()
-    #     self._mesh_prim_model.as_string = "/World/mesh"
-    #     print(f"[omni.gsplat.viewport] Streaming initialized")
+    def init_streaming(self):
+        self.init_replicator()
+        self._mesh_prim_model.as_string = "/World/mesh"
+        self._viewport_overlay_model.set_value(True)
+        self.init_replicator()
+        print(f"[omni.gsplat.viewport] Streaming initialized")
 
     def init_replicator(self):
         """Initialize Replicator connection"""
@@ -188,8 +190,8 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
                     ui.Button("Reset Camera", width=20, clicked_fn=self._on_btn_reset_click)
                     with ui.HStack():
                         ui.Label("Viewport Overlay", width=100)
-                        model = ui.CheckBox().model
-                        model.add_value_changed_fn(self._on_checkbox_value_changed)
+                        self._viewport_overlay_model = ui.CheckBox().model
+                        self._viewport_overlay_model.add_value_changed_fn(self._on_checkbox_value_changed)
 
         # Camera Viewport
         # Ref: https://docs.omniverse.nvidia.com/kit/docs/omni.kit.viewport.docs/latest/overview.html#simplest-example
@@ -425,8 +427,7 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         """Called by rendering_event_stream."""
         if self.render_product is None:
             # Initialize Replicator in streaming stage set up instead.
-            self.init_replicator()
-            # self._mesh_prim_model.as_string = "/World/mesh"
+            return
         if self.render_event.is_set():
             return
         # Update UI to show the rendered image of the previous render event
