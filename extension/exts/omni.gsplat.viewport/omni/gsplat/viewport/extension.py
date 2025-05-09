@@ -1,5 +1,15 @@
 import threading
 
+# # Install packages at runtime for now, since I haven't figured out how to install them during Kit app build yet.
+# # TODO: Should install these packages during build instead of at runtime.
+# # Ref: https://docs.omniverse.nvidia.com/kit/docs/kit-manual/latest/guide/using_pip_packages.html
+# import omni.kit.pipapi
+# omni.kit.pipapi.install("numpy")
+# omni.kit.pipapi.install("Pillow", module="PIL")
+# omni.kit.pipapi.install("torch")
+# omni.kit.pipapi.install("warp-lang", module="warp")
+# omni.kit.pipapi.install("pyzmq", module="zmq")
+
 import numpy as np
 import omni.ext
 import omni.ui as ui
@@ -33,10 +43,15 @@ def normalize_depth(
 # instantiated when extension gets enabled and `on_startup(ext_id)` will be called. Later when extension gets disabled
 # on_shutdown() is called.
 class OmniGSplatViewportExtension(omni.ext.IExt):
+    # # Static instance variable for singleton access
+    # _instance = None
+
     # Name as omni.gsplat.viewport since omni.3dgs.viewport is not a valid name.
 
     def __init__(self):
         super().__init__()
+        # # Store instance in static variable
+        # OmniGSplatViewportExtension._instance = self
         self.prev_camera_to_object_pos: Gf.Vec3d = None
         self.prev_camera_to_object_rot: Gf.Vec3d = None
         self.camera_to_object_pos: Gf.Vec3d = None
@@ -45,6 +60,7 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         self.mesh_prim_visibility: str = None
         self.timeline_is_playing: bool = None
         # Replicator annotators
+        self.render_product= None
         self.rep_depth_annotator = None
         self.rep_rgba_annotator = None
         # Initialize ZMQ context and socket
@@ -110,16 +126,22 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
         self.zmq_socket = self.zmq_context.socket(zmq.REQ)
         self.zmq_socket.connect("ipc:///tmp/omni-3dgs-extension/vanillags_renderer")
 
+    # def init_streaming(self):
+    #     self.init_replicator()
+    #     self._mesh_prim_model.as_string = "/World/mesh"
+    #     print(f"[omni.gsplat.viewport] Streaming initialized")
+
     def init_replicator(self):
         """Initialize Replicator connection"""
         # Disable anti-aliasing to avoid unwanted noise in simulated depth images
         rep.settings.set_render_rtx_realtime(antialiasing="Off")
         viewport_api = get_active_viewport()
         cam_prim_path = viewport_api.camera_path.pathString
-        self.render_product_path = rep.create.render_product(
+        self.render_product = rep.create.render_product(
             cam_prim_path,
             resolution=(self.rgba_w, self.rgba_h),
-        ).path
+        )
+        self.render_product_path = self.render_product.path
         print(f"[omni.gsplat.viewport] Replicator render product path: {self.render_product_path}")
         self.rep_depth_annotator = rep.AnnotatorRegistry.get_annotator("distance_to_camera", device="cuda")
         self.rep_depth_annotator.attach(self.render_product_path)
@@ -341,8 +363,7 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
             self.render_event.wait()
             # Check data shape since it may be (0,) during initialization
             if not self.timeline_is_playing or \
-                self.rep_depth_annotator is None or \
-                self.rep_rgba_annotator is None or \
+                self.render_product is None or \
                 self.depth_rep.shape != (self.rgba_h, self.rgba_w) or \
                 self.rgba_rep.shape != (self.rgba_h, self.rgba_w, 4):
                 # Don't use background image feature if not available
@@ -391,6 +412,8 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
             print(f"[omni.gsplat.viewport] Stage Closing")
             self._mesh_prim_model.as_string = ''
             self._cleanup()
+        elif event.type == int(omni.usd.StageEventType.CLOSED):
+            print(f"[omni.gsplat.viewport] Stage Closed")
         # Uncomment for Eco Mode
         # elif event.type == int(omni.usd.StageEventType.ASSETS_LOADED):
         #     print(f"[omni.gsplat.viewport] Assets Loaded")
@@ -400,8 +423,10 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
 
     def _on_rendering_event(self, event):
         """Called by rendering_event_stream."""
-        if self.rep_depth_annotator is None:
+        if self.render_product is None:
+            # Initialize Replicator in streaming stage set up instead.
             self.init_replicator()
+            # self._mesh_prim_model.as_string = "/World/mesh"
         if self.render_event.is_set():
             return
         # Update UI to show the rendered image of the previous render event
@@ -429,13 +454,17 @@ class OmniGSplatViewportExtension(omni.ext.IExt):
     def _cleanup(self):
         # Detach Replicator depth annotator
         self.timeline.stop()
-        if self.rep_depth_annotator is not None:
-            self.rep_depth_annotator.detach([self.render_product_path])
-        if self.rep_rgba_annotator is not None:
-            self.rep_rgba_annotator.detach([self.render_product_path])
+        # if self.render_product is not None:
+        #     self.render_product.destroy()
+        # if self.rep_depth_annotator is not None:
+        #     self.rep_depth_annotator.detach([self.render_product_path])
+        # if self.rep_rgba_annotator is not None:
+        #     self.rep_rgba_annotator.detach([self.render_product_path])
+        self.render_product = None
         self.rep_depth_annotator = None
         self.rep_rgba_annotator = None
         self.configure_viewport_overlay(False)
+        print("[omni.gsplat.viewport] Cleanup done")
 
     def on_shutdown(self):
         print("[omni.gsplat.viewport] omni gsplat viewport shutdown")
