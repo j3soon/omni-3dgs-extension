@@ -4,6 +4,8 @@
 
 > For Neural Radiance Field (NeRF) support, please refer to the [Omniverse NeRF Extension](https://github.com/j3soon/omni-nerf-extension).
 
+For web streaming example, see the [omni-3dgs-streaming](https://github.com/j3soon/omni-3dgs-streaming) repository.
+
 ## Prerequisites
 
 - **Hardware**:
