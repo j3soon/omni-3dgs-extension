@@ -216,11 +216,11 @@ There are also other projects that attempt to integrate 3DGS with Omniverse, suc
 
 ## Acknowledgement
 
-This project has been made possible through the support of [CGV Lab][cgvlab], [VMLab](vmlab), and [NVIDIA AI Technology Center (NVAITC)][nvaitc].
+This project has been made possible through the support of [CGV Lab][cgvlab], [VMLab][vmlab], and [NVIDIA AI Technology Center (NVAITC)][nvaitc].
 
 Special thanks to [@tigerpaws01](https://github.com/tigerpaws01) for the initial implementation of the PyGame viewer.
 
-I would also like to thank the large-scale 3DGS Study Group members, [@Sunnyhong0326](https://github.com/Sunnyhong0326) and Ting-Yu Yan for discussions.
+I would also like to thank the large-scale 3DGS Study Group members, [@Joshimello](https://github.com/Joshimello), [@Sunnyhong0326](https://github.com/Sunnyhong0326), and Ting-Yu Yan for discussions.
 
 For a complete list of contributors to the code of this repository, please visit the [contributor list](https://github.com/j3soon/omni-3dgs-extension/graphs/contributors).
 
