@@ -19,6 +19,14 @@ For web streaming example, see the [omni-3dgs-streaming](https://github.com/j3so
   - [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
   - Omniverse Isaac Sim (through NGC Container)
 
+> Other setup options provided by the community:
+>
+> **Non-Docker Setup**. For reproducibility, we only provide instructions on running both the renderer and the viewer inside docker containers. However, if you insist not using docker and are comfortable with resolving the dependencies by yourself, it is possible to run the renderer on the host (see [Issue #4](https://github.com/j3soon/omni-3dgs-extension/issues/4)), and the Isaac Sim viewer can also be run on the host (see [Issue #3](https://github.com/j3soon/omni-3dgs-extension/issues/3)).
+>
+> **Windows Support**. We only provide instructions for running on Ubuntu for simplicity. Nevertheless, if you really want to run it on Windows, you can use [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/) with the [WSL 2 backend](https://docs.docker.com/desktop/features/wsl/) to run the renderer backend. The viewer can be run on the Windows host. Some code changes to make zmq use tcp instead of ipc are required.
+>
+> **Without Isaac Sim**. Since Isaac Sim is basically Omniverse Kit with many extra features, we recommend using Isaac Sim directly for simplicity. However, we do provide instructions for running the viewer directly in Omniverse Kit through the [`kit-app-template`](https://github.com/NVIDIA-Omniverse/kit-app-template). See [omni-3dgs-streaming](https://github.com/j3soon/omni-3dgs-streaming) for further information.
+
 ## Demo
 
 > TODO: Add more demo videos here.
@@ -204,6 +212,8 @@ After modifying code, you can restart Isaac Sim to apply changes. The docker con
 This project focuses on the simplest integration of various 3DGS renderers with Omniverse by intentionally decoupling the renderer backend from the Omniverse extension. This design enables easy future integration of advanced 3DGS renderers that use representations incompatible with Vanilla Gaussian Splatting, such as [Compact 3DGS](https://maincold2.github.io/c3dgs/), [Octree-GS](https://city-super.github.io/octree-gs/), and others. This allows for rapid prototyping without the need of standardizing the representation of 3DGS.
 
 It is worth noting that advanced usages, such as those (shadows, reflections, refractions) proposed in [a talk from GTC Spring 2023](https://www.nvidia.com/en-us/on-demand/session/gtcspring23-s52163/), are out of scope of this project. The formal way to integrate 3DGS with Omniverse may need to somehow standardize the representation of 3DGS, and refer to methods such as [3DGUT](https://research.nvidia.com/labs/toronto-ai/3DGUT/) and [3DGRT](https://gaussiantracer.github.io/).
+
+**2025/06 Update**: If you are only using VanillaGS and don't need custom 3DGS backend support, we now have an official (beta) feature that allows [converting PLY files to special USDZ files](https://github.com/nv-tlabs/3dgrut?tab=readme-ov-file#converting-ply-files-to-usdz) and can be used directly in Omniverse Kit (or Isaac Sim). See [3DGRUT's Exporting USDZ for use in Omniverse and Isaac Sim](https://github.com/nv-tlabs/3dgrut?tab=readme-ov-file#exporting-usdz-for-use-in-omniverse-and-isaac-sim) for more details.
 
 This project originated as a feature branch of the [j3soon/omni-nerf-extension](https://github.com/j3soon/omni-nerf-extension). However, the branch has diverged significantly and we decided to maintain this project separately. Key differences include:
 
